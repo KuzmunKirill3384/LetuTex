@@ -1,7 +1,10 @@
 <script setup>
 import { ref, watch, onUnmounted } from 'vue';
-import { getDocument } from 'pdfjs-dist';
+import * as pdfjsLib from 'pdfjs-dist';
 import { api } from '@/composables/useApi.js';
+
+import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
 const props = defineProps({
   pdfUrl: { type: String, default: '' },
@@ -22,7 +25,7 @@ async function loadPdf() {
   loading.value = true;
   error.value = '';
   try {
-    pdfDoc = await getDocument({ url: props.pdfUrl, withCredentials: true }).promise;
+    pdfDoc = await pdfjsLib.getDocument({ url: props.pdfUrl, withCredentials: true }).promise;
     renderPages();
   } catch (e) {
     error.value = e?.message || 'Не удалось загрузить PDF';

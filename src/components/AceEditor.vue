@@ -151,7 +151,7 @@ onMounted(async () => {
     return;
   }
   editor = ace.edit(wrapper.value);
-  editor.setTheme('ace/theme/tomorrow_night_bright');
+  editor.setTheme('ace/theme/chrome');
   editor.session.setMode('ace/mode/latex');
   editor.session.setUseWrapMode(true);
   editor.setFontSize(14);
@@ -273,41 +273,7 @@ onBeforeUnmount(() => {
 });
 
 function loadAce() {
-  return new Promise((resolve) => {
-    if (window.ace) return resolve(window.ace);
-
-    const timeout = setTimeout(() => resolve(null), 15000);
-
-    const s = document.createElement('script');
-    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/ace/1.35.0/ace.js';
-    s.onerror = () => {
-      clearTimeout(timeout);
-      resolve(null);
-    };
-    s.onload = () => {
-      const scripts = [
-        'https://cdnjs.cloudflare.com/ajax/libs/ace/1.35.0/mode-latex.js',
-        'https://cdnjs.cloudflare.com/ajax/libs/ace/1.35.0/theme-tomorrow_night_bright.js',
-        'https://cdnjs.cloudflare.com/ajax/libs/ace/1.35.0/ext-language_tools.js',
-      ];
-      let loaded = 0;
-      function done() {
-        loaded++;
-        if (loaded >= scripts.length) {
-          clearTimeout(timeout);
-          resolve(window.ace);
-        }
-      }
-      for (const src of scripts) {
-        const el = document.createElement('script');
-        el.src = src;
-        el.onload = done;
-        el.onerror = done;
-        document.head.appendChild(el);
-      }
-    };
-    document.head.appendChild(s);
-  });
+  return Promise.resolve(window.ace || null);
 }
 
 function gotoLine(line) {
@@ -324,7 +290,7 @@ defineExpose({ gotoLine, insertSnippet, focus });
 </script>
 
 <template>
-  <div class="ace-editor-root relative">
+  <div class="ace-editor-root absolute inset-0">
     <style>
       .ace_error_line {
         background: rgba(239, 68, 68, 0.15) !important;
