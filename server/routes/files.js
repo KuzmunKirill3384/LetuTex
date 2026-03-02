@@ -63,12 +63,19 @@ router.post('/:project_id/upload-zip', upload.single('file'), (req, res, next) =
     const entries = zip.getEntries();
     const root = path.join(config.projectsDir, projectId);
     const extracted = [];
+    const MAX_EXTRACTED_FILES = 500;
+    const MAX_TOTAL_SIZE = 50 * 1024 * 1024;
+    let totalSize = 0;
 
     for (const entry of entries) {
       if (entry.isDirectory) continue;
-      const entryName = entry.entryName.replace(/\\/g, '/');
+      if (extracted.length >= MAX_EXTRACTED_FILES) break;
+
+      let entryName = entry.entryName.replace(/\\/g, '/');
       if (entryName.startsWith('__MACOSX') || entryName.includes('.DS_Store')) continue;
-      if (entryName.startsWith('.')) continue;
+      if (entryName.startsWith('.') || entryName.includes('/.')) continue;
+      if (entryName.includes('..') || path.isAbsolute(entryName)) continue;
+      if (/^[a-zA-Z]:/.test(entryName)) continue;
 
       try {
         validateUploadExtension(entryName);
@@ -77,9 +84,17 @@ router.post('/:project_id/upload-zip', upload.single('file'), (req, res, next) =
         continue;
       }
 
+      const entryData = entry.getData();
+      totalSize += entryData.length;
+      if (totalSize > MAX_TOTAL_SIZE) break;
+
       const full = path.join(root, entryName);
+      const resolvedFull = path.resolve(full);
+      const resolvedRoot = path.resolve(root);
+      if (!resolvedFull.startsWith(resolvedRoot + path.sep)) continue;
+
       fs.mkdirSync(path.dirname(full), { recursive: true });
-      fs.writeFileSync(full, entry.getData());
+      fs.writeFileSync(full, entryData);
       extracted.push(entryName);
     }
 
