@@ -1,0 +1,18 @@
+services:
+  app:
+    build: .
+    ports:
+      - "${PORT:-8000}:8000"
+    volumes:
+      - leti-data:/app/data
+    environment:
+      - PORT=8000
+      - SECRET_KEY=${SECRET_KEY:-change-me-in-production}
+      - DATA_DIR=/app/data
+      - COMPILE_TIMEOUT_SECONDS=${COMPILE_TIMEOUT_SECONDS:-60}
+      - MAX_FILE_SIZE_BYTES=${MAX_FILE_SIZE_BYTES:-1048576}
+      - MAX_PROJECTS_PER_USER=${MAX_PROJECTS_PER_USER:-50}
+    restart: unless-stopped
+
+volumes:
+  leti-data:

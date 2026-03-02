@@ -1,0 +1,106 @@
+\documentclass[12pt, a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T2A]{fontenc}
+\usepackage[russian]{babel}
+\usepackage{amsmath, amssymb, amsthm}
+\usepackage{geometry}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{setspace}
+\usepackage{indentfirst}
+\usepackage{titlesec}
+\usepackage{caption}
+\usepackage[backend=biber, style=gost-numeric, sorting=none]{biblatex}
+
+\geometry{left=3cm, right=1.5cm, top=2cm, bottom=2cm}
+\onehalfspacing
+\setlength{\parindent}{1.25cm}
+
+\addbibresource{references.bib}
+
+\begin{document}
+
+\begin{titlepage}
+  \centering
+  {\small Министерство науки и высшего образования Российской Федерации}\\[0.3cm]
+  {\small Федеральное государственное автономное образовательное учреждение\\высшего образования}\\[0.3cm]
+  {\small\textbf{«Санкт-Петербургский государственный электротехнический\\университет «ЛЭТИ» им. В.\,И.\,Ульянова (Ленина)»}}\\[0.3cm]
+  {\small (СПбГЭТУ «ЛЭТИ»)}\\[0.5cm]
+  {\small Факультет\ldots \quad Кафедра\ldots}\\[2cm]
+
+  {\Large\textbf{ВЫПУСКНАЯ КВАЛИФИКАЦИОННАЯ РАБОТА}}\\[0.5cm]
+  {\large по направлению подготовки XX.XX.XX --- «Направление»}\\[0.5cm]
+  {\large\textbf{Тема работы}}\\[2cm]
+
+  \begin{flushleft}
+    \hspace{8cm} Студент гр.\ XXXX \\
+    \hspace{8cm} \underline{\hspace{3cm}} Фамилия~И.\,О. \\[0.5cm]
+    \hspace{8cm} Руководитель \\
+    \hspace{8cm} \underline{\hspace{3cm}} Фамилия~И.\,О. \\[0.5cm]
+  \end{flushleft}
+  \vfill
+  {\small Санкт-Петербург \\ \the\year}
+\end{titlepage}
+
+\newpage
+\tableofcontents
+\newpage
+
+\section*{Введение}
+\addcontentsline{toc}{section}{Введение}
+
+Актуальность темы\ldots
+
+Целью данной работы является\ldots
+
+\textbf{Задачи:}
+\begin{enumerate}
+  \item Изучить\ldots
+  \item Разработать\ldots
+  \item Провести\ldots
+\end{enumerate}
+
+\newpage
+\section{Обзор предметной области}
+
+\subsection{Основные понятия}
+Текст раздела.
+
+\subsection{Анализ существующих решений}
+Текст раздела.
+
+\newpage
+\section{Проектирование}
+
+\subsection{Архитектура системы}
+Текст раздела.
+
+\subsection{Выбор технологий}
+Текст раздела.
+
+\newpage
+\section{Реализация}
+
+\subsection{Описание модулей}
+Текст раздела.
+
+\newpage
+\section{Тестирование}
+
+Описание тестирования.
+
+\newpage
+\section*{Заключение}
+\addcontentsline{toc}{section}{Заключение}
+
+В ходе выполнения работы были получены следующие результаты\ldots
+
+\newpage
+\printbibliography[title={Список литературы}]
+\addcontentsline{toc}{section}{Список литературы}
+
+\newpage
+\section*{Приложение А}
+\addcontentsline{toc}{section}{Приложение А}
+
+\end{document}

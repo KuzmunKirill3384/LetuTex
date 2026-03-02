@@ -1,0 +1,10 @@
+node_modules
+data
+.git
+.idea
+.cursor
+.env
+.env.local
+coverage
+*.log
+.DS_Store

@@ -1,0 +1,86 @@
+\documentclass[12pt, a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T2A]{fontenc}
+\usepackage[russian]{babel}
+\usepackage{amsmath, amssymb}
+\usepackage{geometry}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{setspace}
+\usepackage{indentfirst}
+\usepackage{caption}
+
+\geometry{left=3cm, right=1.5cm, top=2cm, bottom=2cm}
+\onehalfspacing
+\setlength{\parindent}{1.25cm}
+
+\captionsetup{justification=centering, labelsep=endash}
+
+\begin{document}
+
+\begin{titlepage}
+  \centering
+  {\small НАИМЕНОВАНИЕ ОРГАНИЗАЦИИ}\\[2cm]
+  \textbf{ОТЧЁТ}\\[0.5cm]
+  {\large\textbf{О НАУЧНО-ИССЛЕДОВАТЕЛЬСКОЙ РАБОТЕ}}\\[0.5cm]
+  {\large\textbf{Тема работы}}\\[0.5cm]
+  (промежуточный / заключительный)\\[3cm]
+
+  \begin{flushleft}
+    \hspace{8cm} Руководитель НИР \\
+    \hspace{8cm} \underline{\hspace{3cm}} Фамилия~И.\,О. \\
+  \end{flushleft}
+  \vfill
+  {\small Санкт-Петербург \\ \the\year}
+\end{titlepage}
+
+\newpage
+\section*{Реферат}
+\addcontentsline{toc}{section}{Реферат}
+Отчёт содержит: XX~с., XX~рис., XX~табл., XX~источников.
+
+КЛЮЧЕВЫЕ СЛОВА: слово1, слово2, слово3.
+
+Объектом исследования является\ldots
+
+Цель работы ---\ldots
+
+\newpage
+\tableofcontents
+\newpage
+
+\section*{Определения, обозначения и сокращения}
+\addcontentsline{toc}{section}{Определения, обозначения и сокращения}
+
+\begin{description}
+  \item[API] --- Application Programming Interface
+  \item[ГОСТ] --- Государственный стандарт
+\end{description}
+
+\newpage
+\section*{Введение}
+\addcontentsline{toc}{section}{Введение}
+
+Актуальность\ldots
+
+\newpage
+\section{Основная часть}
+
+\subsection{Анализ}
+Текст.
+
+\subsection{Результаты}
+Текст.
+
+\newpage
+\section*{Заключение}
+\addcontentsline{toc}{section}{Заключение}
+
+Выводы\ldots
+
+\newpage
+\begin{thebibliography}{9}
+  \bibitem{gost} ГОСТ 7.32-2017. Отчёт о научно-исследовательской работе.
+\end{thebibliography}
+
+\end{document}

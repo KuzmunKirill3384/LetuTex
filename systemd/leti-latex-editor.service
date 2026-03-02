@@ -1,0 +1,16 @@
+[Unit]
+Description=LaTeX Editor ЛЭТИ
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/leti-latex-editor
+EnvironmentFile=-/etc/leti-latex-editor.env
+ExecStart=node server/index.js
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
