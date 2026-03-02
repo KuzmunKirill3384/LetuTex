@@ -4,6 +4,8 @@
 
 ## Архитектура
 
+### Общая схема системы
+
 ```mermaid
 flowchart LR
   Client["Vue 3 SPA<br/>(Ace Editor, Tailwind)"]
@@ -15,12 +17,248 @@ flowchart LR
   API --> TeX
 ```
 
-Приложение использует слоистую архитектуру:
+### Слоистая архитектура (Clean Architecture)
+
+```mermaid
+flowchart TB
+  subgraph Presentation["Presentation Layer"]
+    Routes["routes/<br/>auth, projects, files,<br/>compile, history, download"]
+  end
+  
+  subgraph Application["Application Layer"]
+    Services["services/<br/>projectService, fileService,<br/>compileService, synctexService"]
+  end
+  
+  subgraph Domain["Domain Layer"]
+    Validation["domain/validation.js<br/>validatePath, parseLatexErrors"]
+    Exceptions["exceptions.js<br/>NotFoundError, ForbiddenError"]
+  end
+  
+  subgraph Infrastructure["Infrastructure Layer"]
+    FileStore["fileStore.js"]
+    ProjectRepo["projectRepository.js"]
+    UserStore["userStore.js"]
+    CompileRunner["compileRunner.js"]
+  end
+  
+  Routes --> Services
+  Services --> Validation
+  Services --> Exceptions
+  Services --> FileStore
+  Services --> ProjectRepo
+  Services --> UserStore
+  Services --> CompileRunner
+```
 
 - **Presentation** — Express-маршруты (`server/routes/`)
 - **Application** — сервисный слой (`server/services/`)
 - **Domain** — валидация, сущности (`server/domain/`)
 - **Infrastructure** — хранилище, компилятор (`server/infrastructure/`)
+
+### Процесс компиляции LaTeX
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant U as Пользователь
+  participant E as Editor (Vue)
+  participant API as Express API
+  participant CS as compileService
+  participant CR as compileRunner
+  participant TeX as pdflatex/latexmk
+  
+  U->>E: Ctrl+Enter (компиляция)
+  E->>E: Автосохранение файла
+  E->>API: POST /api/projects/:id/compile
+  API->>CS: compile(projectId, userId)
+  CS->>CS: Проверка доступа (requireWriteAccess)
+  CS->>CS: Блокировка проекта (lock)
+  CS->>CR: run(projectRoot, mainFile, compiler)
+  
+  alt latexmk доступен
+    CR->>TeX: latexmk -pdf main.tex
+  else fallback
+    CR->>TeX: pdflatex main.tex
+    CR->>TeX: bibtex (если есть .bib)
+    CR->>TeX: pdflatex main.tex
+  end
+  
+  TeX-->>CR: stdout/stderr + exit code
+  CR->>CR: parseLatexErrors(log)
+  CR-->>CS: {success, log, errors}
+  CS->>CS: Разблокировка проекта
+  CS-->>API: result
+  API-->>E: {success, pdf_url, log, errors}
+  
+  alt success = true
+    E->>E: Показать PDF превью
+  else success = false
+    E->>E: Показать ошибки в логе
+  end
+```
+
+### Аутентификация и авторизация
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant U as Пользователь
+  participant C as Client (Vue)
+  participant API as Express API
+  participant Auth as auth middleware
+  participant US as userStore
+  
+  U->>C: Ввод логина/пароля
+  C->>API: POST /api/auth/login
+  API->>US: authenticate(username, password)
+  US->>US: bcrypt.compare(password, hash)
+  
+  alt Успех
+    US-->>API: {id, username, display_name}
+    API->>API: Set-Cookie: user_id (signed)
+    API-->>C: 200 {user}
+    C->>C: Редирект на /editor
+  else Ошибка
+    US-->>API: null
+    API-->>C: 401 {detail: "Invalid credentials"}
+  end
+  
+  Note over C,API: Последующие запросы
+  C->>API: GET /api/projects (Cookie: user_id)
+  API->>Auth: getCurrentUser(req)
+  Auth->>Auth: Проверка подписи cookie
+  Auth->>US: getById(userId)
+  US-->>Auth: user
+  Auth->>Auth: req.user = user
+  API-->>C: 200 {projects}
+```
+
+### Структура данных проекта
+
+```mermaid
+erDiagram
+  USER ||--o{ PROJECT : owns
+  USER ||--o{ COLLABORATOR : participates
+  PROJECT ||--o{ COLLABORATOR : has
+  PROJECT ||--o{ FILE : contains
+  FILE ||--o{ VERSION : has_history
+  
+  USER {
+    string id PK
+    string username UK
+    string password_hash
+    string display_name
+  }
+  
+  PROJECT {
+    string id PK
+    string name
+    string owner_id FK
+    string main_file
+    string compiler
+    datetime updated_at
+  }
+  
+  COLLABORATOR {
+    string project_id FK
+    string user_id FK
+    enum role "read | write"
+  }
+  
+  FILE {
+    string path PK
+    string project_id FK
+    blob content
+  }
+  
+  VERSION {
+    string id PK
+    string file_path FK
+    datetime timestamp
+    blob content
+  }
+```
+
+### Компоненты фронтенда
+
+```mermaid
+flowchart TB
+  subgraph Views["Views (страницы)"]
+    Landing["LandingView"]
+    Login["LoginView"]
+    Editor["EditorView"]
+    Account["AccountView"]
+  end
+  
+  subgraph Components["Components"]
+    Header["AppHeader"]
+    AceEd["AceEditor"]
+    PDF["PdfPreviewSync"]
+    Toolbar["LatexToolbar"]
+    Modal["ModalDialog"]
+    Card["ProjectCard"]
+  end
+  
+  subgraph Composables["Composables (логика)"]
+    useAuth["useAuth"]
+    useEditor["useEditor"]
+    useApi["useApi"]
+    useToast["useToast"]
+    latexComp["latexCompletions"]
+  end
+  
+  Editor --> Header
+  Editor --> AceEd
+  Editor --> PDF
+  Editor --> Toolbar
+  Editor --> Modal
+  
+  Landing --> Card
+  Landing --> Modal
+  
+  Editor --> useEditor
+  Editor --> useAuth
+  AceEd --> latexComp
+  
+  useEditor --> useApi
+  useEditor --> useToast
+  useAuth --> useApi
+```
+
+### Обработка файловых операций
+
+```mermaid
+flowchart TD
+  subgraph Input["Входные данные"]
+    Path["filePath от клиента"]
+  end
+  
+  subgraph Validation["Валидация (domain/validation.js)"]
+    V1["validatePathInsideProject<br/>• path.resolve() внутри root<br/>• запрет '..' и абсолютных путей"]
+    V2["validateFileExtension<br/>• whitelist: .tex, .bib, .sty..."]
+    V3["validateContentSize<br/>• MAX_FILE_SIZE_BYTES"]
+  end
+  
+  subgraph Service["fileService"]
+    S1["createFile / save / delete"]
+  end
+  
+  subgraph Store["fileStore (infrastructure)"]
+    FS["read / write / rename / delete"]
+    History["saveHistory / listHistory"]
+  end
+  
+  Path --> V1
+  V1 -->|OK| V2
+  V2 -->|OK| V3
+  V3 -->|OK| S1
+  S1 --> FS
+  FS --> History
+  
+  V1 -->|403 Forbidden| Error["Ошибка"]
+  V2 -->|400 Bad Request| Error
+  V3 -->|400 Bad Request| Error
+```
 
 Подробнее: [docs/architecture.md](docs/architecture.md)
 
@@ -277,6 +515,42 @@ npm run test:coverage   # с покрытием
 - **Backend unit** — валидация, сервисы (`tests/server/`)
 - **Backend integration** — API-тесты через supertest (`tests/server/routes/`)
 - **Frontend unit** — composables, компоненты (`tests/client/`)
+
+## Верификация работоспособности
+
+### Автоматическая проверка
+
+```bash
+npm ci            # установка зависимостей
+npm run build     # сборка фронтенда
+npm test          # запуск всех тестов (86 тестов)
+npm run lint      # проверка ESLint
+```
+
+### Ручная проверка
+
+1. **Запуск сервера**
+   ```bash
+   npm start
+   ```
+
+2. **Проверка health endpoint**
+   ```bash
+   curl http://localhost:8000/api/health
+   # {"status":"ok","uptime":...,"timestamp":"..."}
+   ```
+
+3. **Авторизация** — откройте http://localhost:8000, войдите с логином `demo` и паролем `demo`
+
+4. **Создание проекта** — нажмите «Новый проект» или используйте шаблон
+
+5. **Редактирование** — откройте `main.tex`, внесите изменения
+
+6. **Компиляция** — нажмите Ctrl+Enter или кнопку «Компилировать»
+   - При наличии TeX Live появится PDF-превью
+   - При отсутствии TeX — структурированная ошибка в логе
+
+7. **Скачивание проекта** — нажмите «Скачать ZIP»
 
 ## Линтинг и форматирование
 
