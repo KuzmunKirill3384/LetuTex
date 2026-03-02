@@ -21,6 +21,7 @@
     "node": ">=18"
   },
   "dependencies": {
+    "ace-builds": "^1.43.6",
     "adm-zip": "^0.5.16",
     "archiver": "^7.0.0",
     "bcrypt": "^6.0.0",
