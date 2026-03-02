@@ -128,5 +128,5 @@ export async function run(projectRoot, mainFile, compiler = 'pdflatex') {
   const pdfExists = fs.existsSync(pdfPath);
   const hasWarnings = result.code !== 0 && pdfExists;
 
-  return { success: pdfExists, pdf_url: pdfExists ? undefined : null, log, errors, hasWarnings };
+  return { success: pdfExists, log, errors, hasWarnings };
 }

@@ -13,7 +13,8 @@ const router = Router({ mergeParams: true });
 router.post('/:project_id/compile', async (req, res, next) => {
   try {
     const result = await compileService.compile(req.params.project_id, req.user.id);
-    res.json({ success: result.success, pdf_url: result.pdf_url, log: result.log, errors: result.errors });
+    const pdfUrl = result.success ? `/api/projects/${req.params.project_id}/output.pdf` : null;
+    res.json({ success: result.success, pdf_url: pdfUrl, log: result.log, errors: result.errors, hasWarnings: result.hasWarnings });
   } catch (e) {
     next(e);
   }

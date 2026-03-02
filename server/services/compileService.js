@@ -23,11 +23,7 @@ export async function compile(projectId, userId) {
   }
   lock.locked = true;
   try {
-    const result = await runCompile(root, proj.main_file, proj.compiler || 'pdflatex');
-    if (result.success && result.pdf_url === undefined) {
-      result.pdf_url = `/api/projects/${projectId}/output.pdf`;
-    }
-    return result;
+    return await runCompile(root, proj.main_file, proj.compiler || 'pdflatex');
   } finally {
     lock.locked = false;
   }
