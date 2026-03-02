@@ -77,6 +77,17 @@ export async function run(projectRoot, mainFile, compiler = 'pdflatex') {
     return { success: false, log: '', errors: [{ message: `File ${mainFile} not found` }] };
   }
 
+  const pdfName = path.basename(mainFile, path.extname(mainFile)) + '.pdf';
+  const pdfPath = path.join(root, pdfName);
+  
+  if (fs.existsSync(pdfPath)) {
+    try {
+      fs.unlinkSync(pdfPath);
+    } catch {
+      // ignore if cannot delete
+    }
+  }
+
   const cmd = VALID_COMPILERS.has(compiler) ? compiler : 'pdflatex';
   const env = { ...process.env, TEXINPUTS: root + '//:' };
   let result;
@@ -122,8 +133,6 @@ export async function run(projectRoot, mainFile, compiler = 'pdflatex') {
   }
 
   const log = result.stdout + '\n' + result.stderr;
-  const pdfName = path.basename(mainFile, path.extname(mainFile)) + '.pdf';
-  const pdfPath = path.join(root, pdfName);
   const errors = parseLatexErrors(log);
   const pdfExists = fs.existsSync(pdfPath);
   const hasWarnings = result.code !== 0 && pdfExists;
