@@ -1,6 +1,8 @@
 import { ref, computed } from 'vue';
 import { api } from './useApi.js';
 import { useToast } from './useToast.js';
+import { applyOpToContent } from './useRealtime.js';
+import { useAuth } from './useAuth.js';
 
 const projects = ref([]);
 const currentProjectId = ref('');
@@ -16,6 +18,8 @@ const cursorPos = ref({ line: 1, col: 1 });
 const dirty = ref(false);
 const compileBusy = ref(false);
 const autoCompile = ref(false);
+const AUTO_INTERVAL_KEY = 'leti_auto_compile_interval';
+const autoCompileInterval = ref(Math.max(2, Math.min(10, parseInt(localStorage.getItem(AUTO_INTERVAL_KEY) || '5', 10)) || 5));
 const statusMsg = ref('');
 const statusType = ref('');
 
@@ -29,8 +33,9 @@ const logFilter = ref('all');
 let saveTimer = null;
 const SAVE_DEBOUNCE = 2000;
 
-export function useEditor() {
+export function useEditor(realtime) {
   const { success, error: showError, info: _info, warning } = useToast();
+  const { user } = useAuth();
 
   const currentProjectName = computed(() => {
     const p = projects.value.find((x) => x.id === currentProjectId.value);
@@ -79,9 +84,16 @@ export function useEditor() {
   }
 
   function isLogError(line) {
-    return logErrors.value.some(
-      (e) => (e.message && line.includes(e.message)) || (e.line != null && line.includes('l.' + e.line)),
-    );
+    return logErrors.value.some((e) => {
+      if (e.message && line.includes(e.message)) return true;
+      if (e.line == null) return false;
+      return (
+        line.includes('l.' + e.line) ||
+        line.includes('line ' + e.line) ||
+        line.includes('Line ' + e.line) ||
+        new RegExp('\\b' + e.line + '\\b').test(line)
+      );
+    });
   }
 
   async function loadProjects() {
@@ -95,6 +107,7 @@ export function useEditor() {
 
   async function selectProject(id, router) {
     clearTimeout(saveTimer);
+    realtime?.disconnect?.();
     if (fileLoaded && currentProjectId.value) await saveCurrentFile();
     fileLoaded = false;
     dirty.value = false;
@@ -124,13 +137,35 @@ export function useEditor() {
     dirty.value = false;
     currentFile.value = file;
     localStorage.setItem('leti_last_file', file);
+    const projectId = currentProjectId.value;
+    if (realtime?.connect) {
+      try {
+        await realtime.connect(projectId, file, {
+          onDoc(content) {
+            editorContent.value = content ?? '';
+            fileLoaded = true;
+          },
+          onOp(op, remoteUserId) {
+            if (remoteUserId && user.value?.id === remoteUserId) return;
+            editorContent.value = applyOpToContent(editorContent.value, op);
+          },
+        });
+        return;
+      } catch {
+        realtime.disconnect?.();
+      }
+    }
     try {
-      const data = await api(`/api/projects/${currentProjectId.value}/files/${encodeURIComponent(file)}`);
+      const data = await api(`/api/projects/${projectId}/files/${encodeURIComponent(file)}`);
       editorContent.value = data.content || '';
       fileLoaded = true;
     } catch (e) {
       showError(e.message);
     }
+  }
+
+  function sendRealtimeOp(op) {
+    realtime?.sendOp?.(op);
   }
 
   async function saveCurrentFile() {
@@ -152,9 +187,10 @@ export function useEditor() {
     editorContent.value = val;
     dirty.value = true;
     clearTimeout(saveTimer);
+    const delay = autoCompile.value ? autoCompileInterval.value * 1000 : SAVE_DEBOUNCE;
     saveTimer = setTimeout(() => {
       if (currentProjectId.value && fileLoaded) saveCurrentFile();
-    }, SAVE_DEBOUNCE);
+    }, delay);
   }
 
   async function compile() {
@@ -258,6 +294,7 @@ export function useEditor() {
     dirty,
     compileBusy,
     autoCompile,
+    autoCompileInterval,
     statusMsg,
     statusType,
     showPreview,
@@ -282,6 +319,7 @@ export function useEditor() {
     setCompiler,
     renameProject,
     cleanup,
+    sendRealtimeOp,
     get fileLoaded() {
       return fileLoaded;
     },

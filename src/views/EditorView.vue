@@ -5,13 +5,17 @@ import AceEditor from '@/components/AceEditor.vue';
 import LatexToolbar from '@/components/LatexToolbar.vue';
 import ModalDialog from '@/components/ModalDialog.vue';
 import PdfPreviewSync from '@/components/PdfPreviewSync.vue';
+import ToggleSwitch from '@/components/ToggleSwitch.vue';
+import SegmentControl from '@/components/SegmentControl.vue';
 import { useAuth } from '@/composables/useAuth.js';
+import { useRealtime } from '@/composables/useRealtime.js';
 import { useEditor } from '@/composables/useEditor.js';
 import { useCustomSnippets } from '@/composables/useCustomSnippets.js';
 import { api } from '@/composables/useApi.js';
 import { useToast } from '@/composables/useToast.js';
 
 const { user, displayName, logout } = useAuth();
+const realtime = useRealtime();
 const { customSnippets, addSnippet } = useCustomSnippets();
 const { success, error: showError } = useToast();
 const isProjectOwner = computed(() => currentProjectData.value?.owner_id === user.value?.id);
@@ -32,6 +36,7 @@ const {
   dirty,
   compileBusy,
   autoCompile,
+  autoCompileInterval,
   statusMsg,
   statusType,
   showPreview,
@@ -55,7 +60,8 @@ const {
   setCompiler,
   renameProject,
   cleanup,
-} = useEditor();
+  sendRealtimeOp,
+} = useEditor(realtime);
 
 const viewMode = ref('split');
 const sidebarCollapsed = ref(false);
@@ -85,6 +91,8 @@ const collaboratorsLoading = ref(false);
 const addCollaboratorBusy = ref(false);
 const definitionsCache = ref({});
 const bibKeys = ref([]);
+const syncPdfPage = ref(0);
+let syncForwardTimer = null;
 
 const showHistoryModal = ref(false);
 const historyVersions = ref([]);
@@ -99,6 +107,12 @@ const showAddSnippetModal = ref(false);
 const snippetLabel = ref('');
 const snippetText = ref('');
 const dragOver = ref(false);
+const showSearchModal = ref(false);
+const searchQuery = ref('');
+const searchResults = ref([]);
+const searchBusy = ref(false);
+const ONBOARDING_KEY = 'leti_onboarding_seen';
+const showOnboardingHint = ref(false);
 const expandedFolders = ref(new Set());
 
 watch(
@@ -219,6 +233,55 @@ const quickOpenFiles = computed(() => {
 
 function onCursorChange(pos) {
   cursorPos.value = pos;
+  if (syncForwardTimer) clearTimeout(syncForwardTimer);
+  syncForwardTimer = setTimeout(() => syncEditorToPdf(), 400);
+}
+
+async function syncEditorToPdf() {
+  if (!currentProjectId.value || !currentFile.value || !cursorPos.value?.line) return;
+  const ext = (currentFile.value.split('.').pop() || '').toLowerCase();
+  if (ext !== 'tex' && ext !== 'sty' && ext !== 'cls') return;
+  try {
+    const data = await api(
+      `/api/projects/${currentProjectId.value}/synctex-forward?file=${encodeURIComponent(currentFile.value)}&line=${cursorPos.value.line}&column=${cursorPos.value.col || 1}`,
+    );
+    if (data?.page) syncPdfPage.value = data.page;
+  } catch {
+    syncPdfPage.value = 0;
+  }
+}
+
+async function doSearch() {
+  if (!currentProjectId.value || !searchQuery.value.trim()) {
+    searchResults.value = [];
+    return;
+  }
+  searchBusy.value = true;
+  try {
+    const data = await api(
+      `/api/projects/${currentProjectId.value}/search?q=${encodeURIComponent(searchQuery.value.trim())}`,
+    );
+    searchResults.value = data.results || [];
+  } catch {
+    searchResults.value = [];
+  } finally {
+    searchBusy.value = false;
+  }
+}
+
+function goToSearchResult(r) {
+  showSearchModal.value = false;
+  selectFile(r.file);
+  nextTick(() => aceRef.value?.gotoLine(r.line));
+}
+
+function downloadAsTemplate() {
+  if (!currentProjectId.value) return;
+  const url = `/api/projects/${currentProjectId.value}/download`;
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = (currentProjectName.value || 'template').replace(/[^a-zA-Zа-яА-Я0-9_\- ]/g, '_') + '-template.zip';
+  a.click();
 }
 function onToolbarInsert(text) {
   aceRef.value?.insertSnippet(text);
@@ -533,12 +596,22 @@ async function onCompilerChange(e) {
 }
 
 function onLogLineClick(line) {
-  const err = logErrors.value.find(
-    (e) => (e.message && line.includes(e.message)) || (e.line != null && line.includes('l.' + e.line)),
-  );
+  const err = logErrors.value.find((e) => {
+    if (e.message && line.includes(e.message)) return true;
+    if (e.line == null) return false;
+    return (
+      line.includes('l.' + e.line) ||
+      line.includes('line ' + e.line) ||
+      line.includes('Line ' + e.line) ||
+      new RegExp('\\b' + e.line + '\\b').test(line)
+    );
+  });
   if (!err) return;
-  if (err.file && err.file !== currentFile.value) selectFile(err.file);
-  if (err.line != null) aceRef.value?.gotoLine(err.line);
+  const targetFile = normPath(err.file) || normPath(mainFile.value);
+  if (targetFile && targetFile !== normPath(currentFile.value)) selectFile(targetFile);
+  if (err.line != null) {
+    nextTick(() => aceRef.value?.gotoLine(err.line));
+  }
 }
 
 // C5: Unsaved changes warning
@@ -556,9 +629,16 @@ const beforeUnload = (e) => {
 let resizing = false;
 let resizeStart = 0;
 let startLeft = 0;
+let pendingRatio = null;
+let resizeRafId = null;
 const editorCol = ref(null);
 const previewCol = ref(null);
 const RATIO_KEY = 'leti_preview_ratio';
+
+function applyResizeRatio(r) {
+  if (editorCol.value) editorCol.value.style.flex = `${r * 100} 1 0%`;
+  if (previewCol.value) previewCol.value.style.flex = `${(1 - r) * 100} 1 0%`;
+}
 
 function onResizeDown(e) {
   e.preventDefault();
@@ -571,14 +651,31 @@ function onResizeDown(e) {
 function onResizeMove(e) {
   if (!resizing) return;
   const total = editorCol.value?.parentElement?.offsetWidth || 1;
-  const r = Math.max(0.15, Math.min(0.85, (startLeft + e.clientX - resizeStart) / total));
-  if (editorCol.value) editorCol.value.style.flex = `${r * 100} 1 0%`;
-  if (previewCol.value) previewCol.value.style.flex = `${(1 - r) * 100} 1 0%`;
-  localStorage.setItem(RATIO_KEY, String(r));
+  pendingRatio = Math.max(0.15, Math.min(0.85, (startLeft + e.clientX - resizeStart) / total));
+  if (resizeRafId == null) {
+    resizeRafId = requestAnimationFrame(() => {
+      resizeRafId = null;
+      if (pendingRatio != null) {
+        applyResizeRatio(pendingRatio);
+        pendingRatio = null;
+      }
+    });
+  }
 }
 function onResizeUp() {
   if (resizing) {
     resizing = false;
+    if (resizeRafId != null) {
+      cancelAnimationFrame(resizeRafId);
+      resizeRafId = null;
+    }
+    const ratioToSave = pendingRatio ?? (() => {
+      const total = editorCol.value?.parentElement?.offsetWidth;
+      const w = editorCol.value?.offsetWidth;
+      return total && w ? w / total : null;
+    })();
+    if (ratioToSave != null) localStorage.setItem(RATIO_KEY, String(ratioToSave));
+    pendingRatio = null;
     document.body.style.cursor = '';
     document.body.style.userSelect = '';
   }
@@ -643,7 +740,13 @@ onMounted(() => {
     const lastId = paramId || localStorage.getItem('leti_last_project');
     if (lastId && projects.value.some((p) => p.id === lastId)) selectProject(lastId, router);
   });
+  if (!localStorage.getItem(ONBOARDING_KEY)) showOnboardingHint.value = true;
 });
+
+function dismissOnboarding() {
+  showOnboardingHint.value = false;
+  localStorage.setItem(ONBOARDING_KEY, '1');
+}
 
 onBeforeUnmount(() => {
   document.removeEventListener('mousemove', onResizeMove);
@@ -659,7 +762,26 @@ function normPath(p) {
 }
 const errorLinesForCurrentFile = computed(() => {
   const cur = normPath(currentFile.value);
-  return (logErrors.value || []).filter((e) => e.line != null && cur && normPath(e.file) === cur).map((e) => e.line);
+  const main = normPath(mainFile.value);
+  return (logErrors.value || [])
+    .filter((e) => {
+      if (e.line == null || !cur) return false;
+      const ef = normPath(e.file);
+      return ef === cur || (!ef && cur === main);
+    })
+    .map((e) => e.line);
+});
+
+const errorAnnotationsForCurrentFile = computed(() => {
+  const cur = normPath(currentFile.value);
+  const main = normPath(mainFile.value);
+  return (logErrors.value || [])
+    .filter((e) => {
+      if (e.line == null || !cur) return false;
+      const ef = normPath(e.file);
+      return ef === cur || (!ef && cur === main);
+    })
+    .map((e) => ({ line: e.line, message: e.message, severity: e.severity }));
 });
 
 const shortcuts = [
@@ -687,14 +809,14 @@ const shortcuts = [
       <div class="h-4 w-px bg-white/[0.06] mx-1" />
       <select
         v-model="currentProjectId"
-        class="input-base !min-h-[28px] !py-0 !px-2 text-[12px] min-w-[130px] !w-auto bg-transparent !rounded-md"
+        class="select-base-sm min-w-[130px] w-auto"
         @change="selectProject(currentProjectId, router)"
       >
         <option value="">— Проект —</option>
         <option v-for="p in projects" :key="p.id" :value="p.id">{{ p.name }}</option>
       </select>
       <button
-        class="btn-primary !min-h-[28px] !py-0.5 !px-2.5 text-[11px] !rounded-md"
+        class="btn-primary-sm"
         :disabled="compileBusy || !currentProjectId"
         @click="compile"
       >
@@ -704,18 +826,25 @@ const shortcuts = [
         <span v-else class="spinner" style="width: 12px; height: 12px; border-width: 1.5px" />
         <span class="hidden sm:inline">{{ compileBusy ? 'Компиляция…' : 'Компилировать' }}</span>
       </button>
-      <label
-        class="flex items-center gap-1 text-[10px] text-white/35 cursor-pointer hover:text-white/55 transition-colors"
-      >
-        <input v-model="autoCompile" type="checkbox" class="w-3 h-3 rounded accent-leti-gold" /><span
-          class="hidden sm:inline"
-          >Авто</span
-        >
+      <label class="flex items-center gap-1.5 text-[10px] text-white/35 cursor-pointer hover:text-white/55 transition-colors">
+        <ToggleSwitch v-model="autoCompile" />
+        <span class="hidden sm:inline">Авто</span>
       </label>
+      <select
+        v-if="autoCompile"
+        v-model.number="autoCompileInterval"
+        class="select-base-sm w-auto text-[10px] hidden sm:block"
+        title="Интервал автокомпиляции"
+        @change="localStorage.setItem('leti_auto_compile_interval', String(autoCompileInterval))"
+      >
+        <option :value="2">2 с</option>
+        <option :value="5">5 с</option>
+        <option :value="10">10 с</option>
+      </select>
       <select
         v-if="currentProjectId"
         :value="compiler"
-        class="input-base !min-h-[24px] !py-0 !px-1.5 text-[10px] !w-auto bg-transparent !rounded-md hidden sm:block"
+        class="select-base-sm w-auto text-[10px] hidden sm:block"
         @change="onCompilerChange"
       >
         <option value="pdflatex">pdfLaTeX</option>
@@ -723,36 +852,36 @@ const shortcuts = [
         <option value="lualatex">LuaLaTeX</option>
       </select>
       <div class="h-4 w-px bg-white/[0.06] mx-0.5 hidden sm:block" />
-      <div class="hidden sm:flex items-center bg-white/[0.03] rounded-md p-0.5 gap-0.5">
-        <button
-          v-for="m in [
-            { k: 'editor', d: 'M1 1h8v8H1z' },
-            { k: 'split', d: 'M1 1h8v8H1zM5 1v8' },
-            { k: 'preview', d: 'M7 1H3v8h6V3l-2-2zM7 1v2h2' },
+      <div class="hidden sm:flex items-center">
+        <SegmentControl
+          v-model="viewMode"
+          :options="[
+            { value: 'editor', icon: 'M1 1h8v8H1z' },
+            { value: 'split', icon: 'M1 1h8v8H1zM5 1v8' },
+            { value: 'preview', icon: 'M7 1H3v8h6V3l-2-2zM7 1v2h2' },
           ]"
-          :key="m.k"
-          :class="[
-            'w-6 h-5 rounded flex items-center justify-center transition-all',
-            viewMode === m.k ? 'bg-white/10 text-white' : 'text-white/30 hover:text-white/60',
-          ]"
-          @click="viewMode = m.k"
-        >
-          <svg width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.5"><path :d="m.d" /></svg>
-        </button>
+        />
       </div>
-      <button
-        class="btn-ghost text-[11px] text-leti-gold/50 hover:text-leti-gold !min-h-[28px] !py-0"
-        @click="openNewProjectModal"
-      >
+      <button class="btn-ghost-sm text-leti-gold/50 hover:text-leti-gold" @click="openNewProjectModal">
         <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2v8M2 6h8" /></svg
         ><span class="hidden md:inline">Новый</span>
       </button>
-      <button class="btn-ghost text-[11px] text-white/35 !min-h-[28px] !py-0" @click="openHistory">
+      <button class="btn-ghost-sm text-white/35 hover:text-white/60" @click="openHistory">
         <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5">
           <path d="M6 3v3l2 1.5m3-.5a5 5 0 11-10 0 5 5 0 0110 0z" /></svg
         ><span class="hidden md:inline">История</span>
       </button>
-      <button class="btn-ghost text-[11px] text-white/35 !min-h-[28px] !py-0" @click="showShortcutsModal = true">
+      <button
+        class="btn-ghost-sm text-white/35 hover:text-white/60"
+        title="Поиск по проекту"
+        @click="showSearchModal = true; searchQuery = ''; searchResults = []"
+      >
+        <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5">
+          <circle cx="5" cy="5" r="3.5" />
+          <path d="M8 8l2 2" />
+        </svg>
+      </button>
+      <button class="btn-ghost-sm text-white/35 hover:text-white/60" @click="showShortcutsModal = true">
         <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5">
           <rect x="1" y="3" width="10" height="7" rx="1" />
           <path d="M3 6h1M5 6h2M8 6h1M4 8h4" />
@@ -782,17 +911,42 @@ const shortcuts = [
           }}</span></template
         >
       </span>
+      <span
+        v-if="realtime.connected && realtime.otherUsers.length"
+        class="text-[10px] text-leti-gold/70 ml-1.5"
+        :title="'Совместное редактирование: ' + realtime.otherUsers.map((u) => u.username).join(', ')"
+        >{{ realtime.otherUsers.map((u) => u.username).join(', ') }}</span
+      >
       <span class="text-white/20 text-[10px] hidden md:inline font-mono">{{ cursorPos.line }}:{{ cursorPos.col }}</span>
       <span class="text-white/25 text-[10px] hidden md:inline ml-1.5">{{ displayName }}</span>
-      <button class="btn-ghost text-[11px] text-white/30 !min-h-[28px] !py-0" @click="handleLogout">Выход</button>
+      <button class="btn-ghost-sm text-white/30 hover:text-white/50" @click="handleLogout">Выход</button>
     </header>
+
+    <Transition name="slide-fade">
+      <div
+        v-if="showOnboardingHint"
+        class="flex items-center justify-between gap-4 px-4 py-2 bg-leti-gold/10 border-b border-leti-gold/20 text-[11px] text-white/80"
+      >
+        <span class="flex flex-wrap items-center gap-x-4 gap-y-1">
+          <span>Создайте проект из шаблона (кнопка «Новый»)</span>
+          <span>Ctrl+Enter — компиляция</span>
+          <span>Клик по ошибке в логе — переход в редактор</span>
+        </span>
+        <button class="btn-ghost-sm text-leti-gold hover:text-leti-gold/80 flex-shrink-0" @click="dismissOnboarding">
+          Понятно
+        </button>
+      </div>
+    </Transition>
 
     <div class="flex flex-1 min-h-0">
       <!-- Sidebar -->
-      <aside
-        v-if="!sidebarCollapsed"
-        class="w-48 flex-shrink-0 bg-leti-blue/30 backdrop-blur-md border-r border-white/[0.06] flex flex-col overflow-hidden"
+      <div
+        class="flex-shrink-0 overflow-hidden transition-[width] duration-200 ease-[cubic-bezier(0.4,0,0.2,1)] border-r border-white/[0.06]"
+        :class="sidebarCollapsed ? 'w-0' : 'w-48'"
       >
+        <aside
+          class="w-48 min-w-48 h-full bg-leti-blue/30 backdrop-blur-md flex flex-col overflow-hidden"
+        >
         <div class="flex items-center justify-between px-3 py-1.5">
           <h3 class="text-[10px] uppercase tracking-widest text-white/25 font-semibold">Проекты</h3>
           <button class="text-white/20 hover:text-white/50 transition-colors" @click="sidebarCollapsed = true">
@@ -944,6 +1098,12 @@ const shortcuts = [
           </button>
           <button
             class="w-full py-1 text-[10px] text-white/30 hover:text-white/60 hover:bg-white/[0.03] rounded transition-all"
+            @click="downloadAsTemplate"
+          >
+            Скачать как шаблон
+          </button>
+          <button
+            class="w-full py-1 text-[10px] text-white/30 hover:text-white/60 hover:bg-white/[0.03] rounded transition-all"
             @click="openRenameProject"
           >
             Переименовать проект
@@ -955,9 +1115,10 @@ const shortcuts = [
             Удалить проект
           </button>
         </div>
-      </aside>
+        </aside>
+      </div>
       <button
-        v-else
+        v-if="sidebarCollapsed"
         class="w-8 flex-shrink-0 bg-leti-blue/20 border-r border-white/[0.06] flex items-center justify-center hover:bg-white/[0.03] transition-colors"
         @click="sidebarCollapsed = false"
       >
@@ -1013,7 +1174,7 @@ const shortcuts = [
             <path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
           </svg>
           <p class="text-sm">Выберите проект слева или создайте новый</p>
-          <button class="btn-primary text-sm" @click="openNewProjectModal">Создать проект</button>
+          <button class="btn-primary-sm" @click="openNewProjectModal">Создать проект</button>
         </div>
         <div
           v-else
@@ -1027,8 +1188,10 @@ const shortcuts = [
             ref="aceRef"
             :model-value="editorContent"
             :error-line-numbers="errorLinesForCurrentFile"
+            :error-annotations="errorAnnotationsForCurrentFile"
             :bib-keys="bibKeys"
             @update:model-value="onEditorChange"
+            @op="sendRealtimeOp"
             @save="saveCurrentFile"
             @compile="compile"
             @cursor-change="onCursorChange"
@@ -1119,6 +1282,7 @@ const shortcuts = [
           v-if="showPreview && currentProjectId"
           :pdf-url="pdfUrl"
           :project-id="currentProjectId"
+          :sync-page="syncPdfPage"
           @goto="onPdfGoto"
         />
         <iframe v-else-if="showPreview" :src="pdfUrl" class="flex-1 w-full border-0 bg-neutral-800" title="PDF" />
@@ -1135,23 +1299,21 @@ const shortcuts = [
               class="flex items-center gap-2 px-3 py-1 text-[10px] text-white/30 border-b border-white/[0.04] bg-leti-blue-dark/20"
             >
               <span>Лог</span>
-              <div class="flex items-center gap-0.5 ml-2 bg-white/[0.03] rounded p-0.5">
-                <button
-                  v-for="f in [
-                    { k: 'all', l: 'Все', c: '' },
-                    { k: 'errors', l: 'Ошибки', c: 'bg-red-500/20 text-red-400' },
-                    { k: 'warnings', l: 'Warn', c: 'bg-amber-500/20 text-amber-400' },
-                  ]"
-                  :key="f.k"
-                  :class="[
-                    'px-1.5 py-0.5 rounded text-[9px] transition-all',
-                    logFilter === f.k ? f.c || 'bg-white/10 text-white/70' : 'text-white/30 hover:text-white/50',
-                  ]"
-                  @click="logFilter = f.k"
-                >
-                  {{ f.l }}
-                </button>
-              </div>
+              <SegmentControl
+                v-model="logFilter"
+                class="ml-2"
+                :options="[
+                  { value: 'all', label: 'Все' },
+                  { value: 'errors', label: 'Ошибки' },
+                  { value: 'warnings', label: 'Warn' },
+                ]"
+                :option-active-class="(opt, active) =>
+                  active && opt.value === 'errors'
+                    ? '!bg-red-500/20 !text-red-400'
+                    : active && opt.value === 'warnings'
+                      ? '!bg-amber-500/20 !text-amber-400'
+                      : ''"
+              />
               <span class="flex-1" />
               <button class="text-[9px] text-white/20 hover:text-white/50" @click="logText = ''">Очистить</button>
               <button class="text-[9px] text-leti-gold/50 hover:text-leti-gold" @click="logFullscreen = true">
@@ -1174,26 +1336,23 @@ const shortcuts = [
         <div v-if="logFullscreen" class="fixed inset-0 z-[80] flex flex-col bg-[#0d1117]">
           <div class="flex items-center gap-2 px-4 py-2 border-b border-white/[0.08] bg-leti-blue-dark/40">
             <span class="text-sm text-white/50 font-medium">Лог компиляции</span>
-            <div class="flex items-center gap-0.5 ml-2 bg-white/[0.06] rounded p-0.5">
-              <button
-                v-for="f in [
-                  { k: 'all', l: 'Все', c: '' },
-                  { k: 'errors', l: 'Ошибки', c: 'bg-red-500/20 text-red-400' },
-                  { k: 'warnings', l: 'Warn', c: 'bg-amber-500/20 text-amber-400' },
-                ]"
-                :key="f.k"
-                :class="[
-                  'px-2 py-1 rounded text-xs transition-all',
-                  logFilter === f.k ? f.c || 'bg-white/10 text-white/70' : 'text-white/30 hover:text-white/50',
-                ]"
-                @click="logFilter = f.k"
-              >
-                {{ f.l }}
-              </button>
-            </div>
+            <SegmentControl
+              v-model="logFilter"
+              :options="[
+                { value: 'all', label: 'Все' },
+                { value: 'errors', label: 'Ошибки' },
+                { value: 'warnings', label: 'Warn' },
+              ]"
+              :option-active-class="(opt, active) =>
+                active && opt.value === 'errors'
+                  ? '!bg-red-500/20 !text-red-400'
+                  : active && opt.value === 'warnings'
+                    ? '!bg-amber-500/20 !text-amber-400'
+                    : ''"
+            />
             <span class="flex-1" />
             <button class="text-xs text-white/30 hover:text-white/60" @click="logText = ''">Очистить</button>
-            <button class="btn-primary !py-1 !px-3 text-xs" @click="logFullscreen = false">Закрыть</button>
+            <button class="btn-primary-sm" @click="logFullscreen = false">Закрыть</button>
           </div>
           <pre
             class="flex-1 overflow-auto p-4 text-xs font-mono text-white/40 bg-[#0a0e14] whitespace-pre-wrap leading-relaxed"
@@ -1282,7 +1441,41 @@ const shortcuts = [
         </div>
       </div>
       <div class="flex justify-end mt-5">
-        <button class="btn-secondary text-sm" @click="showShortcutsModal = false">Закрыть</button>
+        <button class="btn-secondary-sm" @click="showShortcutsModal = false">Закрыть</button>
+      </div>
+    </ModalDialog>
+
+    <ModalDialog :show="showSearchModal" max-width="max-w-2xl" @close="showSearchModal = false">
+      <h3 class="text-lg font-semibold text-white mb-3">Поиск по проекту</h3>
+      <p class="text-xs text-white/40 mb-3">Поиск по содержимому .tex и .bib</p>
+      <div class="flex gap-2 mb-4">
+        <input
+          v-model="searchQuery"
+          class="input-base flex-1"
+          placeholder="Введите фразу..."
+          @keydown.enter="doSearch"
+        />
+        <button class="btn-primary-sm" :disabled="searchBusy || !searchQuery.trim()" @click="doSearch">
+          {{ searchBusy ? '…' : 'Искать' }}
+        </button>
+      </div>
+      <ul class="max-h-80 overflow-auto space-y-1 rounded border border-white/10 bg-white/[0.03] p-1">
+        <li
+          v-for="(r, idx) in searchResults"
+          :key="idx"
+          class="flex flex-col gap-0.5 px-2 py-1.5 rounded hover:bg-white/[0.08] cursor-pointer text-left"
+          @click="goToSearchResult(r)"
+        >
+          <span class="text-[11px] font-mono text-leti-gold/80">{{ r.file }}:{{ r.line }}</span>
+          <span class="text-xs text-white/70 truncate">{{ r.snippet }}</span>
+        </li>
+        <li v-if="searchResults.length === 0 && !searchBusy && searchQuery.trim()" class="text-xs text-white/30 py-4 text-center">
+          Ничего не найдено
+        </li>
+        <li v-else-if="!searchQuery.trim()" class="text-xs text-white/25 py-4 text-center">Введите запрос и нажмите Искать</li>
+      </ul>
+      <div class="flex justify-end mt-3">
+        <button class="btn-secondary-sm" @click="showSearchModal = false">Закрыть</button>
       </div>
     </ModalDialog>
 
@@ -1300,9 +1493,9 @@ const shortcuts = [
         rows="4"
       />
       <div class="flex gap-3 justify-end">
-        <button class="btn-secondary text-sm" @click="showAddSnippetModal = false">Отмена</button>
+        <button class="btn-secondary-sm" @click="showAddSnippetModal = false">Отмена</button>
         <button
-          class="btn-primary text-sm"
+          class="btn-primary-sm"
           :disabled="!snippetLabel.trim() || !snippetText.trim()"
           @click="
             addSnippet({ label: snippetLabel.trim(), title: snippetLabel.trim(), snippet: snippetText.trim() });
@@ -1320,8 +1513,8 @@ const shortcuts = [
       <label class="block text-[10px] font-semibold text-white/45 mb-1.5 uppercase tracking-wider">Путь</label
       ><input v-model="newFolderPath" class="input-base mb-5" placeholder="sections" @keydown.enter="doCreateFolder" />
       <div class="flex gap-3 justify-end">
-        <button class="btn-secondary text-sm" @click="showNewFolderModal = false">Отмена</button
-        ><button class="btn-primary text-sm" @click="doCreateFolder">Создать</button>
+        <button class="btn-secondary-sm" @click="showNewFolderModal = false">Отмена</button
+        ><button class="btn-primary-sm" @click="doCreateFolder">Создать</button>
       </div></ModalDialog
     >
     <ModalDialog :show="showNewFileModal" @close="showNewFileModal = false"
@@ -1334,24 +1527,24 @@ const shortcuts = [
         @keydown.enter="doCreateFile"
       />
       <div class="flex gap-3 justify-end">
-        <button class="btn-secondary text-sm" @click="showNewFileModal = false">Отмена</button
-        ><button class="btn-primary text-sm" @click="doCreateFile">Создать</button>
+        <button class="btn-secondary-sm" @click="showNewFileModal = false">Отмена</button
+        ><button class="btn-primary-sm" @click="doCreateFile">Создать</button>
       </div></ModalDialog
     >
     <ModalDialog :show="showRenameModal" @close="showRenameModal = false"
       ><h3 class="text-lg font-semibold text-white mb-4">Переименовать</h3>
       <input v-model="renameValue" class="input-base mb-5" @keydown.enter="doRename" />
       <div class="flex gap-3 justify-end">
-        <button class="btn-secondary text-sm" @click="showRenameModal = false">Отмена</button
-        ><button class="btn-primary text-sm" @click="doRename">Переименовать</button>
+        <button class="btn-secondary-sm" @click="showRenameModal = false">Отмена</button
+        ><button class="btn-primary-sm" @click="doRename">Переименовать</button>
       </div></ModalDialog
     >
     <ModalDialog :show="showDeleteConfirm" @close="showDeleteConfirm = false"
       ><h3 class="text-lg font-semibold text-white mb-2">Удалить файл</h3>
       <p class="text-sm text-white/45 mb-6">Удалить «{{ deleteTarget }}»?</p>
       <div class="flex gap-3 justify-end">
-        <button class="btn-secondary text-sm" @click="showDeleteConfirm = false">Отмена</button
-        ><button class="btn-primary text-sm !bg-red-600 hover:!bg-red-500 !shadow-none" @click="doDelete">
+        <button class="btn-secondary-sm" @click="showDeleteConfirm = false">Отмена</button
+        ><button class="btn-danger-sm !bg-red-600 hover:!bg-red-500 !shadow-none !text-white" @click="doDelete">
           Удалить
         </button>
       </div></ModalDialog
@@ -1360,8 +1553,8 @@ const shortcuts = [
       ><h3 class="text-lg font-semibold text-white mb-2">Удалить проект</h3>
       <p class="text-sm text-white/45 mb-6">Удалить «{{ currentProjectName }}»? Это необратимо.</p>
       <div class="flex gap-3 justify-end">
-        <button class="btn-secondary text-sm" @click="showDeleteProjectConfirm = false">Отмена</button
-        ><button class="btn-primary text-sm !bg-red-600 hover:!bg-red-500 !shadow-none" @click="doDeleteProject">
+        <button class="btn-secondary-sm" @click="showDeleteProjectConfirm = false">Отмена</button
+        ><button class="btn-danger-sm !bg-red-600 hover:!bg-red-500 !shadow-none !text-white" @click="doDeleteProject">
           Удалить
         </button>
       </div></ModalDialog
@@ -1370,8 +1563,8 @@ const shortcuts = [
       ><h3 class="text-lg font-semibold text-white mb-4">Переименовать проект</h3>
       <input v-model="renameProjectValue" class="input-base mb-5" @keydown.enter="doRenameProject" />
       <div class="flex gap-3 justify-end">
-        <button class="btn-secondary text-sm" @click="showRenameProjectModal = false">Отмена</button
-        ><button class="btn-primary text-sm" @click="doRenameProject">Переименовать</button>
+        <button class="btn-secondary-sm" @click="showRenameProjectModal = false">Отмена</button
+        ><button class="btn-primary-sm" @click="doRenameProject">Переименовать</button>
       </div></ModalDialog
     >
     <ModalDialog :show="showCollaboratorsModal" max-width="max-w-md" @close="showCollaboratorsModal = false">
@@ -1386,11 +1579,11 @@ const shortcuts = [
           placeholder="Логин пользователя"
           @keydown.enter="doAddCollaborator"
         />
-        <select v-model="newCollaboratorRole" class="input-base !py-1.5 !w-24">
+        <select v-model="newCollaboratorRole" class="select-base-sm !w-24">
           <option value="read">Чтение</option>
           <option value="write">Запись</option>
         </select>
-        <button class="btn-primary text-sm !py-1.5" :disabled="addCollaboratorBusy" @click="doAddCollaborator">
+        <button class="btn-primary-sm" :disabled="addCollaboratorBusy" @click="doAddCollaborator">
           Добавить
         </button>
       </div>
@@ -1403,14 +1596,14 @@ const shortcuts = [
         >
           <span class="text-sm text-white/80">{{ c.display_name || c.user_id }}</span>
           <span class="text-[10px] text-white/35 uppercase mr-2">{{ c.role === 'write' ? 'запись' : 'чтение' }}</span>
-          <button class="btn-ghost text-xs text-red-400/70 hover:text-red-400" @click="doRemoveCollaborator(c.user_id)">
+          <button class="btn-ghost-sm text-red-400/70 hover:text-red-400" @click="doRemoveCollaborator(c.user_id)">
             Удалить
           </button>
         </li>
         <li v-if="collaborators.length === 0" class="text-xs text-white/25 py-2">Нет соавторов</li>
       </ul>
       <div class="flex justify-end">
-        <button class="btn-secondary text-sm" @click="showCollaboratorsModal = false">Закрыть</button>
+        <button class="btn-secondary-sm" @click="showCollaboratorsModal = false">Закрыть</button>
       </div>
     </ModalDialog>
     <ModalDialog :show="showNewProjectModal" @close="showNewProjectModal = false"
@@ -1438,8 +1631,8 @@ const shortcuts = [
         </div>
       </div>
       <div class="flex gap-3 justify-end">
-        <button class="btn-secondary text-sm" @click="showNewProjectModal = false">Отмена</button
-        ><button class="btn-primary text-sm" :disabled="creatingProject" @click="doCreateProject(null)">
+        <button class="btn-secondary-sm" @click="showNewProjectModal = false">Отмена</button
+        ><button class="btn-primary-sm" :disabled="creatingProject" @click="doCreateProject(null)">
           <span v-if="!creatingProject">Создать</span
           ><span v-else class="flex items-center gap-2"><span class="spinner" />Создание…</span>
         </button>
@@ -1459,7 +1652,7 @@ const shortcuts = [
             <p v-if="v.preview" class="text-xs text-white/25 mt-0.5 truncate">{{ v.preview }}</p>
           </div>
           <button
-            class="btn-ghost text-xs text-leti-gold hover:bg-leti-gold/10 flex-shrink-0"
+            class="btn-ghost-sm text-leti-gold hover:bg-leti-gold/10 flex-shrink-0"
             @click="restoreVersion(v.id)"
           >
             Восстановить
@@ -1467,7 +1660,7 @@ const shortcuts = [
         </div>
       </div>
       <div class="flex justify-end mt-5">
-        <button class="btn-secondary text-sm" @click="showHistoryModal = false">Закрыть</button>
+        <button class="btn-secondary-sm" @click="showHistoryModal = false">Закрыть</button>
       </div></ModalDialog
     >
   </div>

@@ -5,9 +5,12 @@ import { LATEX_COMMANDS, LATEX_ENVIRONMENTS } from '@/composables/latexCompletio
 const props = defineProps({
   modelValue: { type: String, default: '' },
   errorLineNumbers: { type: Array, default: () => [] },
+  errorAnnotations: { type: Array, default: () => [] },
   bibKeys: { type: Array, default: () => [] },
+  spellcheck: { type: Boolean, default: true },
+  spellcheckLang: { type: String, default: 'ru' },
 });
-const emit = defineEmits(['update:modelValue', 'save', 'compile', 'cursorChange', 'gotoDefinition']);
+const emit = defineEmits(['update:modelValue', 'save', 'compile', 'cursorChange', 'gotoDefinition', 'op']);
 
 const wrapper = ref(null);
 const loadError = ref(false);
@@ -171,12 +174,31 @@ onMounted(async () => {
     showFoldWidgets: true,
   });
   editor.renderer.setScrollMargin(4, 4);
+  if (wrapper.value) {
+    wrapper.value.setAttribute('spellcheck', props.spellcheck ? 'true' : 'false');
+    wrapper.value.setAttribute('lang', props.spellcheckLang || 'ru');
+  }
 
   setupLatexCompleter(ace);
   setupLatexFolding(ace);
 
-  editor.on('change', () => {
-    if (!ignoreChange) emit('update:modelValue', editor.getValue());
+  editor.on('change', (e) => {
+    if (!ignoreChange) {
+      emit('update:modelValue', editor.getValue());
+      const data = e.data;
+      if (data && (data.action === 'insert' || data.action === 'remove')) {
+        const doc = editor.session.getDocument();
+        if (doc.positionToIndex) {
+          const pos = doc.positionToIndex(data.range.start);
+          if (data.action === 'insert') {
+            emit('op', { type: 'insert', pos, text: data.text || '' });
+          } else {
+            const len = doc.positionToIndex(data.range.end) - pos;
+            emit('op', { type: 'delete', pos, len });
+          }
+        }
+      }
+    }
   });
 
   editor.selection.on('changeCursor', () => {
@@ -249,21 +271,55 @@ function updateErrorMarkers() {
     }
   });
   errorMarkers = [];
+  const anns = Array.isArray(props.errorAnnotations) ? props.errorAnnotations : [];
   const lines = Array.isArray(props.errorLineNumbers) ? props.errorLineNumbers : [];
-  lines.forEach((lineNum) => {
+  const seen = new Set();
+  for (const a of anns) {
+    if (a.line == null) continue;
+    const row = Math.max(0, parseInt(a.line, 10) - 1);
+    if (row >= session.getLength() || seen.has(row)) continue;
+    seen.add(row);
+    const lineLen = session.getLine(row)?.length ?? 0;
+    const range = new Range(row, 0, row, lineLen);
+    const cls = a.severity === 'warning' ? 'ace_warning_line' : 'ace_error_line';
+    const id = session.addMarker(range, cls, 'fullLine', false);
+    errorMarkers.push(id);
+  }
+  for (const lineNum of lines) {
     const row = Math.max(0, parseInt(lineNum, 10) - 1);
-    if (row >= session.getLength()) return;
+    if (row >= session.getLength() || seen.has(row)) continue;
+    seen.add(row);
     const lineLen = session.getLine(row)?.length ?? 0;
     const range = new Range(row, 0, row, lineLen);
     const id = session.addMarker(range, 'ace_error_line', 'fullLine', false);
     errorMarkers.push(id);
-  });
+  }
+  const annotations = anns
+    .filter((a) => a.line != null)
+    .map((a) => ({
+      row: Math.max(0, parseInt(a.line, 10) - 1),
+      column: 0,
+      text: (a.message || '').slice(0, 120),
+      type: a.severity === 'warning' ? 'warning' : 'error',
+    }))
+    .filter((a) => a.row < session.getLength());
+  session.setAnnotations(annotations);
 }
 
 watch(
-  () => props.errorLineNumbers,
+  () => [props.errorLineNumbers, props.errorAnnotations],
   () => updateErrorMarkers(),
   { deep: true },
+);
+
+watch(
+  () => [props.spellcheck, props.spellcheckLang],
+  () => {
+    if (wrapper.value) {
+      wrapper.value.setAttribute('spellcheck', props.spellcheck ? 'true' : 'false');
+      wrapper.value.setAttribute('lang', props.spellcheckLang || 'ru');
+    }
+  },
 );
 
 onBeforeUnmount(() => {
@@ -293,7 +349,12 @@ defineExpose({ gotoLine, insertSnippet, focus });
   <div class="ace-editor-root absolute inset-0">
     <style>
       .ace_error_line {
-        background: rgba(239, 68, 68, 0.15) !important;
+        background: rgba(239, 68, 68, 0.22) !important;
+        border-left: 3px solid rgba(239, 68, 68, 0.8) !important;
+      }
+      .ace_warning_line {
+        background: rgba(245, 158, 11, 0.12) !important;
+        border-left: 3px solid rgba(245, 158, 11, 0.6) !important;
       }
     </style>
     <div v-if="loadError" class="absolute inset-0 flex items-center justify-center text-white/30 text-sm">

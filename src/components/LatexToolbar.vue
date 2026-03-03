@@ -35,10 +35,10 @@ const groups = [
   },
   {
     items: [
-      { label: '∑', title: 'Сумма', snippet: '\\sum_{i=1}^{n} ', cls: 'text-base' },
-      { label: '∫', title: 'Интеграл', snippet: '\\int_{a}^{b} ', cls: 'text-base' },
-      { label: 'x/y', title: 'Дробь', snippet: '\\frac{}{} ', cls: 'text-[10px]' },
-      { label: '√', title: 'Корень', snippet: '\\sqrt{} ', cls: 'text-base' },
+      { label: '∑', title: 'Сумма', snippet: '$\\sum_{i=1}^{n}$ ', cls: 'text-base' },
+      { label: '∫', title: 'Интеграл', snippet: '$\\int_{a}^{b}$ ', cls: 'text-base' },
+      { label: 'x/y', title: 'Дробь', snippet: '$\\frac{}{}$ ', cls: 'text-[10px]' },
+      { label: '√', title: 'Корень', snippet: '$\\sqrt{}$ ', cls: 'text-base' },
     ],
   },
   {
@@ -93,7 +93,7 @@ const groups = [
         v-for="(item, ii) in group.items"
         :key="'g' + gi + '-' + ii"
         :data-tip="item.title"
-        class="flex-shrink-0 w-7 h-7 flex items-center justify-center rounded text-[11px] text-white/50 hover:text-white hover:bg-white/[0.06] transition-all"
+        class="flex-shrink-0 w-7 h-7 flex items-center justify-center rounded text-[11px] text-white/50 hover:text-white hover:bg-white/[0.06] active:scale-[0.97] transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-leti-gold/40"
         :class="item.cls"
         @click="emit('insert', item.snippet + (item.suffix || ''))"
       >
@@ -109,7 +109,7 @@ const groups = [
         v-for="(item, idx) in customSnippets"
         :key="'c' + idx"
         :data-tip="item.title || item.label"
-        class="flex-shrink-0 w-7 h-7 flex items-center justify-center rounded text-[10px] text-leti-gold/70 hover:text-leti-gold hover:bg-white/[0.06] transition-all font-mono"
+        class="flex-shrink-0 w-7 h-7 flex items-center justify-center rounded text-[10px] text-leti-gold/70 hover:text-leti-gold hover:bg-white/[0.06] active:scale-[0.97] transition-all font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-leti-gold/40"
         @click="emit('insert', item.snippet)"
       >
         {{ item.label }}
@@ -118,7 +118,7 @@ const groups = [
     <div class="w-px h-4 bg-white/[0.06] mx-1 flex-shrink-0" />
     <button
       data-tip="Добавить свой сниппет"
-      class="flex-shrink-0 w-7 h-7 flex items-center justify-center rounded text-white/30 hover:text-leti-gold/80 hover:bg-white/[0.06] transition-all"
+      class="flex-shrink-0 w-7 h-7 flex items-center justify-center rounded text-white/30 hover:text-leti-gold/80 hover:bg-white/[0.06] active:scale-[0.97] transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-leti-gold/40"
       @click="emit('add-snippet')"
     >
       <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2v8M2 6h8" /></svg>

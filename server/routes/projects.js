@@ -3,37 +3,42 @@ import * as projectService from '../services/projectService.js';
 import * as fileService from '../services/fileService.js';
 import * as bibKeysService from '../services/bibKeysService.js';
 import { getById } from '../infrastructure/userStore.js';
+import { config } from '../config.js';
 
 const router = Router({ mergeParams: true });
 
-function enrichCollaborators(list) {
-  return list.map((c) => {
-    const u = getById(c.user_id);
-    return { user_id: c.user_id, role: c.role, display_name: u?.display_name || u?.username || c.user_id };
-  });
+async function enrichCollaborators(list) {
+  const out = [];
+  for (const c of list) {
+    const u = await getById(c.user_id);
+    out.push({ user_id: c.user_id, role: c.role, display_name: u?.display_name || u?.username || c.user_id });
+  }
+  return out;
 }
 
-router.get('/', (req, res, next) => {
+router.get('/', async (req, res, next) => {
   try {
-    const projects = projectService.listAccessible(req.user.id);
-    const result = projects.map((p) => {
-      let file_count = 0;
-      try {
-        file_count = fileService.listFiles(p.id, req.user.id).length;
-      } catch {
-        /* ignore */
-      }
-      return { id: p.id, name: p.name, updated_at: p.updated_at, file_count, owner_id: p.owner_id };
-    });
+    const projects = await projectService.listAccessible(req.user.id);
+    const result = await Promise.all(
+      projects.map(async (p) => {
+        let file_count = 0;
+        try {
+          file_count = (await fileService.listFiles(p.id, req.user.id)).length;
+        } catch {
+          /* ignore */
+        }
+        return { id: p.id, name: p.name, updated_at: p.updated_at, file_count, owner_id: p.owner_id };
+      }),
+    );
     res.json({ projects: result });
   } catch (e) {
     next(e);
   }
 });
 
-router.post('/', (req, res, next) => {
+router.post('/', async (req, res, next) => {
   try {
-    const p = projectService.create(req.user.id, req.body || {});
+    const p = await projectService.create(req.user.id, req.body || {});
     res.status(201).json({ id: p.id, name: p.name });
   } catch (e) {
     next(e);
@@ -59,10 +64,10 @@ function buildFileTree(paths) {
   return root.children;
 }
 
-router.get('/:project_id', (req, res, next) => {
+router.get('/:project_id', async (req, res, next) => {
   try {
-    const p = projectService.get(req.params.project_id, req.user.id);
-    const fileList = fileService.listFiles(req.params.project_id, req.user.id);
+    const p = await projectService.get(req.params.project_id, req.user.id);
+    const fileList = await fileService.listFiles(req.params.project_id, req.user.id);
     const files = fileList.map((f) => f.path);
     const files_tree = buildFileTree(files);
     res.json({
@@ -80,63 +85,88 @@ router.get('/:project_id', (req, res, next) => {
   }
 });
 
-router.get('/:project_id/collaborators', (req, res, next) => {
+router.get('/:project_id/collaborators', async (req, res, next) => {
   try {
-    const list = projectService.listCollaborators(req.params.project_id, req.user.id);
-    res.json({ collaborators: enrichCollaborators(list) });
+    const list = await projectService.listCollaborators(req.params.project_id, req.user.id);
+    res.json({ collaborators: await enrichCollaborators(list) });
   } catch (e) {
     next(e);
   }
 });
 
-router.post('/:project_id/collaborators', (req, res, next) => {
+router.post('/:project_id/collaborators', async (req, res, next) => {
   try {
-    const list = projectService.addCollaborator(req.params.project_id, req.user.id, req.body || {});
-    res.status(201).json({ collaborators: enrichCollaborators(list) });
+    const list = await projectService.addCollaborator(req.params.project_id, req.user.id, req.body || {});
+    res.status(201).json({ collaborators: await enrichCollaborators(list) });
   } catch (e) {
     next(e);
   }
 });
 
-router.delete('/:project_id/collaborators/:user_id', (req, res, next) => {
+router.delete('/:project_id/collaborators/:user_id', async (req, res, next) => {
   try {
-    const list = projectService.removeCollaborator(req.params.project_id, req.user.id, req.params.user_id);
-    res.json({ collaborators: enrichCollaborators(list) });
+    const list = await projectService.removeCollaborator(req.params.project_id, req.user.id, req.params.user_id);
+    res.json({ collaborators: await enrichCollaborators(list) });
   } catch (e) {
     next(e);
   }
 });
 
-router.get('/:project_id/bib-keys', (req, res, next) => {
+router.get('/:project_id/bib-keys', async (req, res, next) => {
   try {
-    const data = bibKeysService.getBibKeys(req.params.project_id, req.user.id);
+    const data = await bibKeysService.getBibKeys(req.params.project_id, req.user.id);
     res.json(data);
   } catch (e) {
     next(e);
   }
 });
 
-router.patch('/:project_id', (req, res, next) => {
+router.patch('/:project_id', async (req, res, next) => {
   try {
-    const p = projectService.update(req.params.project_id, req.user.id, req.body || {});
+    const p = await projectService.update(req.params.project_id, req.user.id, req.body || {});
     res.json({ id: p.id, name: p.name, main_file: p.main_file, compiler: p.compiler || 'pdflatex' });
   } catch (e) {
     next(e);
   }
 });
 
-router.post('/:project_id/clone', (req, res, next) => {
+router.post('/:project_id/clone', async (req, res, next) => {
   try {
-    const p = projectService.clone(req.params.project_id, req.user.id);
+    const p = await projectService.clone(req.params.project_id, req.user.id);
     res.status(201).json({ id: p.id, name: p.name });
   } catch (e) {
     next(e);
   }
 });
 
-router.delete('/:project_id', (req, res, next) => {
+router.post('/:project_id/import-git', async (req, res, next) => {
   try {
-    projectService.remove(req.params.project_id, req.user.id);
+    const { remote_url: remoteUrl } = req.body || {};
+    if (!remoteUrl || typeof remoteUrl !== 'string') return res.status(400).json({ error: 'remote_url required' });
+    await projectService.requireWriteAccess(req.params.project_id, req.user.id);
+    if (!config.gitBridgeUrl) return res.status(503).json({ error: 'Git Bridge not configured' });
+    const headers = { 'Content-Type': 'application/json' };
+    if (config.gitBridgeApiKey) headers['X-Git-Bridge-Key'] = config.gitBridgeApiKey;
+    const r = await fetch(`${config.gitBridgeUrl}/clone`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        projectId: req.params.project_id,
+        userId: req.user.id,
+        remoteUrl: remoteUrl.trim(),
+      }),
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) return res.status(r.status >= 500 ? 502 : r.status).json({ error: data.error || 'Import failed' });
+    res.json({ ok: true });
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.delete('/:project_id', async (req, res, next) => {
+  try {
+    await projectService.remove(req.params.project_id, req.user.id);
     res.json({ ok: true });
   } catch (e) {
     next(e);

@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: letutex-config
+  namespace: letutex
+data:
+  MONGO_URI: "mongodb://mongo:27017/letutex"
+  REDIS_URI: "redis://redis:6379"
+  DOCUMENT_UPDATER_URL: "http://document-updater:8001"
+  CLSI_URL: "http://clsi:8003"
+  FILE_STORE_URL: "http://file-store:8004"
+  GIT_BRIDGE_URL: "http://git-bridge:8005"

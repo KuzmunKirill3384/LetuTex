@@ -265,7 +265,7 @@ flowchart TD
 ## Возможности
 
 ### Редактор
-- Ace Editor с подсветкой синтаксиса LaTeX
+- Ace Editor с подсветкой синтаксиса LaTeX и проверкой орфографии (атрибуты spellcheck, lang)
 - Расширенное автодополнение команд и окружений (триггер по `\`)
 - Пользовательские сниппеты (LatexToolbar + localStorage)
 - Folding по `\begin`/`\end` и секциям
@@ -279,7 +279,7 @@ flowchart TD
 - Поддержка BibTeX/Biber (через latexmk или явный вызов)
 - Опциональная компиляция в Docker-контейнере (`USE_DOCKER_COMPILE=true`)
 - Лог с разбором ошибок, клик по ошибке → переход в редактор
-- SyncTeX: клик в PDF → строка в редакторе
+- SyncTeX в обе стороны: клик в PDF → строка в редакторе; курсор в редакторе → прокрутка PDF к странице
 
 ### Управление проектами
 - CRUD проектов, клонирование
@@ -310,6 +310,17 @@ flowchart TD
 - Опционально: **Docker** для изолированной компиляции
 
 ## Установка и запуск
+
+### Первый запуск
+
+1. Клонируйте репозиторий: `git clone <repo-url> leti-latex-editor && cd leti-latex-editor`
+2. Установите зависимости: `npm install`
+3. Соберите фронтенд: `npm run build`
+4. Запустите сервер: `npm start` (по умолчанию порт **8000**)
+5. Откройте в браузере http://localhost:8000
+6. Демо-вход: логин **demo**, пароль **demo**
+
+При необходимости скопируйте `.env.example` в `.env` и настройте переменные.
 
 ### Быстрый старт
 
@@ -350,9 +361,15 @@ docker compose up --build
 | `COMPILE_TIMEOUT_SECONDS` | `60` | Таймаут компиляции (секунды) |
 | `MAX_FILE_SIZE_BYTES` | `1048576` | Максимальный размер файла (байты) |
 | `MAX_PROJECTS_PER_USER` | `50` | Лимит проектов на пользователя |
-| `USE_DOCKER_COMPILE` | `false` | Компиляция в Docker-контейнере |
-| `DOCKER_TEX_IMAGE` | `texlive/texlive:latest` | Docker-образ TeX Live |
+| `MAX_PROJECT_FILES` | `1000` | Максимум файлов в одном проекте |
+| `MAX_PROJECT_SIZE_BYTES` | `52428800` (50 МБ) | Максимальный суммарный размер файлов проекта |
+| `USE_DOCKER_COMPILE` | `false` | Компиляция в Docker-контейнере (изоляция, стабильность) |
+| `DOCKER_TEX_IMAGE` | `texlive/texlive:latest` | Docker-образ с TeX Live (должен содержать `latexmk`, `pdflatex`, `synctex`) |
 | `ALLOWED_ORIGINS` | `*` | CORS origins (через запятую) |
+
+**Компиляция в Docker:** при `USE_DOCKER_COMPILE=true` сервер запускает `latexmk` внутри контейнера (образ задаётся `DOCKER_TEX_IMAGE`). Корень проекта монтируется в `/work`, PDF и `.synctex.gz` пишутся в каталог проекта на хосте. Рекомендуемый образ: [texlive/texlive](https://hub.docker.com/r/texlive/texlive) (например `texlive/texlive:latest` или `texlive/texlive:small`). На хосте должен быть установлен Docker и доступна команда `docker`.
+
+**Бэкапы:** для резервного копирования каталога `data/` используйте скрипт `scripts/backup-data.sh [каталог]`. Пример cron (ежедневно в 2:00): `0 2 * * * /path/to/LetuTEX/scripts/backup-data.sh /var/backups/letutex`.
 
 Полный пример: [.env.example](.env.example)
 
@@ -389,6 +406,7 @@ docker compose up --build
 | POST | `/api/projects/:id/folders` | Создать папку |
 | POST | `/api/projects/:id/upload` | Загрузить файлы (multipart) |
 | POST | `/api/projects/:id/upload-zip` | Загрузить и распаковать ZIP |
+| GET | `/api/projects/:id/search` | Поиск по содержимому (.tex, .bib) |
 | GET | `/api/projects/:id/files/*` | Содержимое файла |
 | PUT | `/api/projects/:id/files/*` | Сохранить файл |
 | PATCH | `/api/projects/:id/files/*` | Переименовать |
@@ -402,6 +420,7 @@ docker compose up --build
 | GET | `/api/projects/:id/output.pdf` | Скачать PDF |
 | GET | `/api/projects/:id/download` | Скачать ZIP проекта |
 | GET | `/api/projects/:id/synctex-inverse` | SyncTeX (PDF → source) |
+| GET | `/api/projects/:id/synctex-forward` | SyncTeX (source → page в PDF) |
 | GET | `/api/projects/:id/definitions` | Определения команд |
 | GET | `/api/projects/:id/bib-keys` | Ключи цитирования |
 

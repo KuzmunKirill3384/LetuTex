@@ -3,6 +3,7 @@ import bcrypt from 'bcrypt';
 import fs from 'fs';
 import path from 'path';
 import { config } from '../config.js';
+import * as userStoreMongo from './userStoreMongo.js';
 
 const BCRYPT_ROUNDS = 10;
 
@@ -52,7 +53,7 @@ function upgradeHashIfNeeded(username, password, storedHash) {
   }
 }
 
-export function authenticate(username, password) {
+function fileAuthenticate(username, password) {
   ensureLoaded();
   const data = cache[username];
   if (!data || !verifyPassword(password, data.password_hash)) return null;
@@ -60,7 +61,7 @@ export function authenticate(username, password) {
   return toPublic(data);
 }
 
-export function getById(userId) {
+function fileGetById(userId) {
   ensureLoaded();
   for (const data of Object.values(cache)) {
     if (data?.id === userId) return toPublic(data);
@@ -68,7 +69,7 @@ export function getById(userId) {
   return null;
 }
 
-export function register(username, password, displayName) {
+function fileRegister(username, password, displayName) {
   ensureLoaded();
   if (cache[username]) return null;
   const id = username;
@@ -78,7 +79,27 @@ export function register(username, password, displayName) {
   return toPublic(cache[username]);
 }
 
-export function userExists(username) {
+function fileUserExists(username) {
   ensureLoaded();
   return !!cache[username];
+}
+
+export async function authenticate(username, password) {
+  if (config.useMongo) return userStoreMongo.authenticate(username, password);
+  return fileAuthenticate(username, password);
+}
+
+export async function getById(userId) {
+  if (config.useMongo) return userStoreMongo.getById(userId);
+  return fileGetById(userId);
+}
+
+export async function register(username, password, displayName) {
+  if (config.useMongo) return userStoreMongo.register(username, password, displayName);
+  return fileRegister(username, password, displayName);
+}
+
+export async function userExists(username) {
+  if (config.useMongo) return userStoreMongo.userExists(username);
+  return fileUserExists(username);
 }

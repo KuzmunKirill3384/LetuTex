@@ -12,7 +12,7 @@
 1. Клонировать репозиторий в `/opt/leti-latex-editor` (или другой каталог).
 2. Установить зависимости: `npm install`, затем `npm run build` (сборка Tailwind в `public/css/style.css`).
 3. Создать каталог данных: `mkdir -p data/projects`.
-4. Скопировать `systemd/leti-latex-editor.service` в `/etc/systemd/system/`, при необходимости изменить `WorkingDirectory` и `User`/`Group`.
+4. Скопировать `deploy/systemd/leti-latex-editor.service` в `/etc/systemd/system/`, при необходимости изменить `WorkingDirectory` и `User`/`Group`.
 5. Создать файл окружения `/etc/leti-latex-editor.env` (опционально):
    - `DATA_DIR` — путь к каталогу данных (по умолчанию `{base_dir}/data`)
    - `MAX_FILE_SIZE_BYTES` — лимит размера файла (по умолчанию 1048576)
@@ -21,7 +21,7 @@
    - `MAX_PROJECTS_PER_USER` — лимит проектов на пользователя (по умолчанию 50)
    - `PORT` — порт приложения (по умолчанию 8000)
 6. Запуск: `systemctl enable leti-latex-editor`, `systemctl start leti-latex-editor`.
-7. Nginx: скопировать `nginx/leti-latex-editor.conf` в `/etc/nginx/sites-available/`, включить сайт, настроить SSL при необходимости (Let's Encrypt или корпоративный сертификат).
+7. Nginx: скопировать `deploy/nginx/leti-latex-editor.conf` в `/etc/nginx/sites-available/`, включить сайт, настроить SSL при необходимости (Let's Encrypt или корпоративный сертификат).
 
 ## Резервное копирование
 

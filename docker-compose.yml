@@ -1,5 +1,5 @@
 services:
-  app:
+  web-api:
     build: .
     ports:
       - "${PORT:-8000}:8000"
@@ -12,7 +12,123 @@ services:
       - COMPILE_TIMEOUT_SECONDS=${COMPILE_TIMEOUT_SECONDS:-60}
       - MAX_FILE_SIZE_BYTES=${MAX_FILE_SIZE_BYTES:-1048576}
       - MAX_PROJECTS_PER_USER=${MAX_PROJECTS_PER_USER:-50}
+      - MONGO_URI=mongodb://mongo:27017/letutex
+      - REDIS_URI=redis://redis:6379
+      - DOCUMENT_UPDATER_URL=http://document-updater:8001
+      - CLSI_URL=http://clsi:8003
+      - CLSI_API_KEY=${CLSI_API_KEY:-}
+      - FILE_STORE_URL=http://file-store:8004
+      - GIT_BRIDGE_URL=http://git-bridge:8005
+      - GIT_BRIDGE_API_KEY=${GIT_BRIDGE_API_KEY:-}
+    depends_on:
+      mongo: { condition: service_healthy }
+      redis: { condition: service_healthy }
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:8000/api/health').then(r=>r.ok?process.exit(0):process.exit(1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  mongo:
+    image: mongo:7
+    ports:
+      - "${MONGO_PORT:-27017}:27017"
+    volumes:
+      - mongo-data:/data/db
+      - ./scripts/init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js:ro
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  document-updater:
+    build: .
+    ports:
+      - "${DOCUMENT_UPDATER_PORT:-8001}:8001"
+    environment:
+      - DOCUMENT_UPDATER_PORT=8001
+      - MONGO_URI=mongodb://mongo:27017/letutex
+      - REDIS_URI=redis://redis:6379
+    depends_on:
+      mongo: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    command: node server/documentUpdater/index.js
+    restart: unless-stopped
+
+  clsi:
+    build: .
+    ports:
+      - "${CLSI_PORT:-8003}:8003"
+    environment:
+      - CLSI_PORT=8003
+      - DATA_DIR=/app/data
+      - MONGO_URI=mongodb://mongo:27017/letutex
+      - DOCUMENT_UPDATER_URL=http://document-updater:8001
+      - FILE_STORE_URL=http://file-store:8004
+      - CLSI_API_KEY=${CLSI_API_KEY:-}
+      - USE_DOCKER_COMPILE=true
+      - DOCKER_TEX_IMAGE=${DOCKER_TEX_IMAGE:-texlive/texlive:latest}
+      - COMPILE_TIMEOUT_SECONDS=${COMPILE_TIMEOUT_SECONDS:-60}
+    volumes:
+      - leti-data:/app/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      mongo: { condition: service_healthy }
+      document-updater: { condition: service_started }
+    command: node server/clsi/index.js
+    restart: unless-stopped
+
+  file-store:
+    build: .
+    ports:
+      - "${FILE_STORE_PORT:-8004}:8004"
+    environment:
+      - FILE_STORE_PORT=8004
+      - FILE_STORE_DATA_DIR=/app/data/file-store
+    volumes:
+      - leti-data:/app/data
+    command: node server/fileStore/index.js
+    restart: unless-stopped
+
+  git-bridge:
+    build: .
+    ports:
+      - "${GIT_BRIDGE_PORT:-8005}:8005"
+    environment:
+      - GIT_BRIDGE_PORT=8005
+      - GIT_REPOS_DIR=/app/data/git-repos
+      - WEB_API_URL=http://web-api:8000
+      - GIT_BRIDGE_URL=http://git-bridge:8005
+      - GIT_BRIDGE_API_KEY=${GIT_BRIDGE_API_KEY:-}
+      - MONGO_URI=mongodb://mongo:27017/letutex
+    volumes:
+      - leti-data:/app/data
+    depends_on:
+      mongo: { condition: service_healthy }
+    command: node server/gitBridge/index.js
+    restart: unless-stopped
+
+networks:
+  default:
+    name: letutex-network
 
 volumes:
   leti-data:
+  mongo-data:
+  redis-data:

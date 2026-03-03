@@ -50,7 +50,15 @@ async function runDocker(projectRoot, mainFile, compiler, timeoutSec) {
   const root = path.resolve(projectRoot);
   const cmd = ['pdflatex', 'xelatex', 'lualatex'].includes(compiler) ? compiler : 'pdflatex';
   const engineFlag = cmd === 'pdflatex' ? '-pdf' : cmd === 'xelatex' ? '-xelatex' : '-lualatex';
-  const latexmkArgs = [engineFlag, '-interaction=nonstopmode', '-halt-on-error', '-outdir=/work', mainFile];
+  const latexmkArgs = [
+    engineFlag,
+    '-g',
+    '-synctex=1',
+    '-interaction=nonstopmode',
+    '-halt-on-error',
+    '-outdir=/work',
+    mainFile,
+  ];
   const dockerArgs = [
     'run',
     '--rm',
@@ -89,7 +97,16 @@ export async function run(projectRoot, mainFile, compiler = 'pdflatex') {
   }
 
   const cmd = VALID_COMPILERS.has(compiler) ? compiler : 'pdflatex';
-  const env = { ...process.env, TEXINPUTS: root + '//:' };
+  const tinyTexPaths = process.env.TINYTEX_BIN
+    ? [process.env.TINYTEX_BIN]
+    : process.env.HOME
+      ? process.platform === 'darwin'
+        ? [path.join(process.env.HOME, 'Library', 'TinyTeX', 'bin', 'universal-darwin')]
+        : [path.join(process.env.HOME, '.TinyTeX', 'bin', 'x86_64-linux'), path.join(process.env.HOME, '.TinyTeX', 'bin', 'aarch64-linux')]
+      : [];
+  const tinyTexBin = tinyTexPaths.find((p) => fs.existsSync(p));
+  const pathAddition = tinyTexBin ? path.delimiter + tinyTexBin : '';
+  const env = { ...process.env, TEXINPUTS: root + '//:', PATH: (process.env.PATH || '') + pathAddition };
   let result;
 
   if (config.useDockerCompile) {
@@ -98,7 +115,7 @@ export async function run(projectRoot, mainFile, compiler = 'pdflatex') {
     const engineFlag = cmd === 'pdflatex' ? '-pdf' : cmd === 'xelatex' ? '-xelatex' : '-lualatex';
     result = await runCommand(
       'latexmk',
-      [engineFlag, '-interaction=nonstopmode', '-halt-on-error', '-outdir=' + root, mainFile],
+      [engineFlag, '-g', '-interaction=nonstopmode', '-halt-on-error', '-outdir=' + root, mainFile],
       root,
       env,
       config.compileTimeoutSeconds,

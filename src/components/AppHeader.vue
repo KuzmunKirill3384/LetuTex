@@ -52,11 +52,11 @@ function navTo(path) {
         <RouterLink to="/account" :class="['nav-link', { active: activePage === 'account' }]">Кабинет</RouterLink>
         <RouterLink to="/editor" :class="['nav-link', { active: activePage === 'editor' }]">Редактор</RouterLink>
         <span v-if="!compact" class="text-sm text-white/30 px-1.5">{{ displayName }}</span>
-        <button class="btn-ghost text-xs text-white/40" @click="handleLogout">Выход</button>
+        <button class="btn-ghost-sm text-white/40 hover:text-white/60" @click="handleLogout">Выход</button>
       </template>
       <template v-else>
         <RouterLink to="/editor" class="nav-link">Редактор</RouterLink>
-        <RouterLink to="/login" class="btn-primary ml-1 text-sm !min-h-[34px] !py-1 !px-4">Войти</RouterLink>
+        <RouterLink to="/login" class="btn-primary-sm ml-1">Войти</RouterLink>
       </template>
     </nav>
 

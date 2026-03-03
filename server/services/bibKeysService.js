@@ -35,8 +35,26 @@ function scanDir(dir, basePath, keys) {
   }
 }
 
-export function getBibKeys(projectId, userId) {
-  projectService.get(projectId, userId);
+export async function getBibKeys(projectId, userId) {
+  await projectService.get(projectId, userId);
+  if (config.useMongo) {
+    const { createFileStoreMongo } = await import('../infrastructure/fileStoreMongo.js');
+    const store = createFileStoreMongo(projectId);
+    const files = await store.listFiles();
+    const keys = [];
+    for (const f of files) {
+      if (f.is_dir || !f.path.toLowerCase().endsWith('.bib')) continue;
+      try {
+        const content = await store.read(f.path);
+        let m;
+        BIB_ENTRY_RE.lastIndex = 0;
+        while ((m = BIB_ENTRY_RE.exec(content)) !== null) keys.push(m[1].trim());
+      } catch {
+        /* ignore */
+      }
+    }
+    return { keys: [...new Set(keys)] };
+  }
   const rootDir = path.join(config.projectsDir, projectId);
   if (!fs.existsSync(rootDir)) return { keys: [] };
   const keys = [];

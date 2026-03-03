@@ -156,7 +156,7 @@ onMounted(loadProjects);
               </svg>
               <input v-model="searchQuery" class="input-base !min-h-[34px] !w-48 !pl-8 !text-sm" placeholder="Поиск…" />
             </div>
-            <select v-model="sortBy" class="input-base !min-h-[34px] !w-auto !text-sm bg-transparent">
+            <select v-model="sortBy" class="select-base !min-h-[34px] !w-auto !text-sm">
               <option value="date">По дате</option>
               <option value="name">По имени</option>
             </select>
@@ -221,8 +221,8 @@ onMounted(loadProjects);
         </div>
       </div>
       <div class="flex gap-3 justify-end">
-        <button class="btn-secondary text-sm" @click="showNewModal = false">Отмена</button>
-        <button class="btn-primary text-sm" :disabled="creating" @click="createProject(null)">
+        <button class="btn-secondary-sm" @click="showNewModal = false">Отмена</button>
+        <button class="btn-primary-sm" :disabled="creating" @click="createProject(null)">
           <span v-if="!creating">Создать</span>
           <span v-else class="flex items-center gap-2"><span class="spinner" /> Создание…</span>
         </button>
@@ -233,8 +233,8 @@ onMounted(loadProjects);
       <h3 class="text-lg font-semibold text-white mb-2">Удалить проект</h3>
       <p class="text-sm text-white/45 mb-6">Удалить «{{ deleteName }}» и все его файлы? Это действие необратимо.</p>
       <div class="flex gap-3 justify-end">
-        <button class="btn-secondary text-sm" @click="showDeleteModal = false">Отмена</button>
-        <button class="btn-primary text-sm !bg-red-600 hover:!bg-red-500 !shadow-none" @click="doDeleteProject">
+        <button class="btn-secondary-sm" @click="showDeleteModal = false">Отмена</button>
+        <button class="btn-danger-sm !bg-red-600 hover:!bg-red-500 !shadow-none !text-white" @click="doDeleteProject">
           Удалить
         </button>
       </div>

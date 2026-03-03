@@ -29,7 +29,7 @@ function onKeydown(e) {
 
 <template>
   <Teleport to="body">
-    <Transition name="fade">
+    <Transition name="modal">
       <div
         v-if="show"
         class="fixed inset-0 z-[60] modal-backdrop flex items-center justify-center p-4"
@@ -37,17 +37,14 @@ function onKeydown(e) {
         @keydown="onKeydown"
         tabindex="-1"
       >
-        <Transition name="scale" appear>
-          <div
-            v-if="show"
-            ref="panelRef"
-            :class="['modal-panel p-6 w-full max-h-[80vh] overflow-auto', maxWidth]"
-            role="dialog"
-            aria-modal="true"
-          >
-            <slot />
-          </div>
-        </Transition>
+        <div
+          ref="panelRef"
+          :class="['modal-panel p-6 w-full max-h-[80vh] overflow-auto', maxWidth]"
+          role="dialog"
+          aria-modal="true"
+        >
+          <slot />
+        </div>
       </div>
     </Transition>
   </Teleport>

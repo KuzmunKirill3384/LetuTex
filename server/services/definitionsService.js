@@ -47,8 +47,30 @@ function scanDir(dir, basePath, extensions) {
   return results;
 }
 
-export function getDefinitions(projectId, userId) {
-  projectService.get(projectId, userId);
+export async function getDefinitions(projectId, userId) {
+  await projectService.get(projectId, userId);
+  if (config.useMongo) {
+    const { createFileStoreMongo } = await import('../infrastructure/fileStoreMongo.js');
+    const store = createFileStoreMongo(projectId);
+    const files = await store.listFiles();
+    const definitions = {};
+    const exts = new Set(['.tex', '.sty', '.cls']);
+    for (const f of files) {
+      if (f.is_dir || !exts.has(path.extname(f.path).toLowerCase())) continue;
+      try {
+        const content = await store.read(f.path);
+        const list = scanFileContent(content, f.path);
+        for (const d of list) {
+          const key = d.name.startsWith('\\') ? d.name : '\\' + d.name;
+          if (!definitions[key]) definitions[key] = [];
+          definitions[key].push({ file: d.file, line: d.line });
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+    return { definitions };
+  }
   const rootDir = path.join(config.projectsDir, projectId);
   if (!fs.existsSync(rootDir)) return { definitions: {} };
   const exts = new Set(['.tex', '.sty', '.cls']);

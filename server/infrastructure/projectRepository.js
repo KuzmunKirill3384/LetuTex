@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { config } from '../config.js';
 import { NotFoundError } from '../exceptions.js';
+import * as repoMongo from './projectRepositoryMongo.js';
 
 const root = config.projectsDir;
 
@@ -32,7 +33,7 @@ function getModifiedTime(dir) {
   }
 }
 
-export function listIdsByOwner(ownerId) {
+function fileListIdsByOwner(ownerId) {
   if (!fs.existsSync(root)) return [];
   const result = [];
   for (const name of fs.readdirSync(root)) {
@@ -48,6 +49,11 @@ export function listIdsByOwner(ownerId) {
   return result;
 }
 
+export async function listIdsByOwner(ownerId) {
+  if (config.useMongo) return repoMongo.listIdsByOwner(ownerId);
+  return fileListIdsByOwner(ownerId);
+}
+
 const COLLABORATORS_FILE = 'collaborators.json';
 
 function readCollaborators(p) {
@@ -61,12 +67,17 @@ function readCollaborators(p) {
   }
 }
 
-export function getCollaborators(projectId) {
+async function fileGetCollaborators(projectId) {
   const p = projectPath(projectId);
   return readCollaborators(p);
 }
 
-export function addCollaborator(projectId, userId, role) {
+export async function getCollaborators(projectId) {
+  if (config.useMongo) return repoMongo.getCollaborators(projectId);
+  return fileGetCollaborators(projectId);
+}
+
+async function fileAddCollaborator(projectId, userId, role) {
   const p = projectPath(projectId);
   const list = readCollaborators(p).filter((c) => c.user_id !== userId);
   if (!['read', 'write'].includes(role)) role = 'read';
@@ -74,13 +85,23 @@ export function addCollaborator(projectId, userId, role) {
   fs.writeFileSync(path.join(p, COLLABORATORS_FILE), JSON.stringify(list, null, 2), 'utf8');
 }
 
-export function removeCollaborator(projectId, userId) {
+export async function addCollaborator(projectId, userId, role) {
+  if (config.useMongo) return repoMongo.addCollaborator(projectId, userId, role);
+  return fileAddCollaborator(projectId, userId, role);
+}
+
+async function fileRemoveCollaborator(projectId, userId) {
   const p = projectPath(projectId);
   const list = readCollaborators(p).filter((c) => c.user_id !== userId);
   fs.writeFileSync(path.join(p, COLLABORATORS_FILE), JSON.stringify(list, null, 2), 'utf8');
 }
 
-export function listIdsWhereCollaborator(userId) {
+export async function removeCollaborator(projectId, userId) {
+  if (config.useMongo) return repoMongo.removeCollaborator(projectId, userId);
+  return fileRemoveCollaborator(projectId, userId);
+}
+
+function fileListIdsWhereCollaborator(userId) {
   if (!fs.existsSync(root)) return [];
   const result = [];
   for (const name of fs.readdirSync(root)) {
@@ -92,7 +113,12 @@ export function listIdsWhereCollaborator(userId) {
   return result;
 }
 
-export function get(projectId) {
+export async function listIdsWhereCollaborator(userId) {
+  if (config.useMongo) return repoMongo.listIdsWhereCollaborator(userId);
+  return fileListIdsWhereCollaborator(userId);
+}
+
+function fileGet(projectId) {
   const p = projectPath(projectId);
   const metaPath = path.join(p, 'meta.txt');
   let name = path.basename(p);
@@ -107,10 +133,16 @@ export function get(projectId) {
   const compilerPath = path.join(p, 'compiler.txt');
   if (fs.existsSync(compilerPath)) compiler = fs.readFileSync(compilerPath, 'utf8').trim() || 'pdflatex';
   const updated_at = new Date(getModifiedTime(p)).toISOString();
-  return { id: projectId, name, owner_id: ownerId, main_file: mainFile, compiler, updated_at };
+  const collaborators = readCollaborators(p);
+  return { id: projectId, name, owner_id: ownerId, main_file: mainFile, compiler, updated_at, collaborators };
 }
 
-export function create(projectId, name, ownerId, mainFile = 'main.tex') {
+export async function get(projectId) {
+  if (config.useMongo) return repoMongo.get(projectId);
+  return fileGet(projectId);
+}
+
+function fileCreate(projectId, name, ownerId, mainFile = 'main.tex') {
   const dir = path.join(root, projectId);
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, 'meta.txt'), (name || 'Untitled').trim(), 'utf8');
@@ -125,32 +157,43 @@ export function create(projectId, name, ownerId, mainFile = 'main.tex') {
   };
 }
 
-export function updateMainFile(projectId, mainFile) {
+export async function create(projectId, name, ownerId, mainFile = 'main.tex') {
+  if (config.useMongo) return repoMongo.create(projectId, name, ownerId, mainFile);
+  return fileCreate(projectId, name, ownerId, mainFile);
+}
+
+export async function updateMainFile(projectId, mainFile) {
+  if (config.useMongo) return repoMongo.updateMainFile(projectId, mainFile);
   const p = projectPath(projectId);
   fs.writeFileSync(path.join(p, 'main_file.txt'), mainFile, 'utf8');
 }
 
-export function updateCompiler(projectId, compiler) {
+export async function updateCompiler(projectId, compiler) {
+  if (config.useMongo) return repoMongo.updateCompiler(projectId, compiler);
   const VALID = new Set(['pdflatex', 'xelatex', 'lualatex']);
   const p = projectPath(projectId);
   fs.writeFileSync(path.join(p, 'compiler.txt'), VALID.has(compiler) ? compiler : 'pdflatex', 'utf8');
 }
 
-export function updateName(projectId, name) {
+export async function updateName(projectId, name) {
+  if (config.useMongo) return repoMongo.updateName(projectId, name);
   const p = projectPath(projectId);
   fs.writeFileSync(path.join(p, 'meta.txt'), (name || 'Untitled').trim(), 'utf8');
 }
 
-export function remove(projectId) {
+export async function remove(projectId) {
+  if (config.useMongo) return repoMongo.remove(projectId);
   const p = projectPath(projectId);
   fs.rmSync(p, { recursive: true });
 }
 
-export function exists(projectId) {
+export async function exists(projectId) {
+  if (config.useMongo) return repoMongo.exists(projectId);
   const dir = path.join(root, projectId);
   return fs.existsSync(dir) && fs.statSync(dir).isDirectory();
 }
 
-export function countByOwner(ownerId) {
-  return listIdsByOwner(ownerId).length;
+export async function countByOwner(ownerId) {
+  if (config.useMongo) return repoMongo.countByOwner(ownerId);
+  return fileListIdsByOwner(ownerId).length;
 }

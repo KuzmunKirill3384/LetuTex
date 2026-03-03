@@ -20,12 +20,19 @@ router.post('/:project_id/compile', async (req, res, next) => {
   }
 });
 
-router.get('/:project_id/output.pdf', (req, res, next) => {
+router.get('/:project_id/output.pdf', async (req, res, next) => {
   try {
-    const proj = projectService.get(req.params.project_id, req.user.id);
-    const root = path.join(config.projectsDir, req.params.project_id);
-    const pdfName = path.basename(proj.main_file, path.extname(proj.main_file)) + '.pdf';
-    const pdfPath = path.join(root, pdfName);
+    const proj = await projectService.get(req.params.project_id, req.user.id);
+    const projectId = req.params.project_id;
+    let pdfPath;
+    if (config.useMongo) {
+      const pdfName = path.basename(proj.main_file, path.extname(proj.main_file)) + '.pdf';
+      pdfPath = path.join(config.outputsDir, projectId, pdfName);
+    } else {
+      const root = path.join(config.projectsDir, projectId);
+      const pdfName = path.basename(proj.main_file, path.extname(proj.main_file)) + '.pdf';
+      pdfPath = path.join(root, pdfName);
+    }
     if (!fs.existsSync(pdfPath)) throw new NotFoundError('PDF not found. Compile first.');
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Cache-Control', 'no-cache');
@@ -35,10 +42,10 @@ router.get('/:project_id/output.pdf', (req, res, next) => {
   }
 });
 
-router.get('/:project_id/synctex-inverse', (req, res, next) => {
+router.get('/:project_id/synctex-inverse', async (req, res, next) => {
   try {
     const { page, x, y } = req.query;
-    const result = synctexService.synctexInverse(req.params.project_id, req.user.id, page, x, y);
+    const result = await synctexService.synctexInverse(req.params.project_id, req.user.id, page, x, y);
     if (!result) return res.status(404).json({ error: 'SyncTeX inverse not available or no match' });
     res.json(result);
   } catch (e) {
@@ -46,9 +53,26 @@ router.get('/:project_id/synctex-inverse', (req, res, next) => {
   }
 });
 
-router.get('/:project_id/definitions', (req, res, next) => {
+router.get('/:project_id/synctex-forward', async (req, res, next) => {
   try {
-    const data = definitionsService.getDefinitions(req.params.project_id, req.user.id);
+    const { file, line, column } = req.query;
+    const result = await synctexService.synctexForward(
+      req.params.project_id,
+      req.user.id,
+      file || '',
+      line,
+      column,
+    );
+    if (!result) return res.status(404).json({ error: 'SyncTeX forward not available or no match' });
+    res.json(result);
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.get('/:project_id/definitions', async (req, res, next) => {
+  try {
+    const data = await definitionsService.getDefinitions(req.params.project_id, req.user.id);
     res.json(data);
   } catch (e) {
     next(e);

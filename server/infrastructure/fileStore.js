@@ -28,7 +28,33 @@ export function createFileStore(projectRoot) {
     fs.writeFileSync(path.join(dir, `${versionId}.txt`), content, 'utf8');
   }
 
+  function getStats() {
+    let fileCount = 0;
+    let totalSize = 0;
+    function walk(dir) {
+      if (!fs.existsSync(dir)) return;
+      for (const name of fs.readdirSync(dir)) {
+        const full = path.join(dir, name);
+        if (fs.statSync(full).isDirectory()) {
+          if (name === '.history') continue;
+          walk(full);
+        } else if (isProjectFile(name)) {
+          fileCount += 1;
+          try {
+            totalSize += fs.statSync(full).size;
+          } catch {
+            /* ignore */
+          }
+        }
+      }
+    }
+    walk(root);
+    return { fileCount, totalSize };
+  }
+
   return {
+    getStats,
+
     listFiles() {
       const result = [];
       function walk(dir, base = '') {

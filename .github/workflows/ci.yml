@@ -39,3 +39,9 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose build web-api
