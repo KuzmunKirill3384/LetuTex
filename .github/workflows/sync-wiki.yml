@@ -1,0 +1,39 @@
+# Синхронизация docs/ с GitHub Wiki при пуше в main.
+# Нужен секрет: Settings → Secrets → WIKI_TOKEN = PAT с scope repo (см. docs/wiki-sync.md).
+name: Sync Wiki
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'docs/**'
+      - 'README.md'
+
+jobs:
+  wiki:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Clone wiki and sync
+        env:
+          WIKI_TOKEN: ${{ secrets.WIKI_TOKEN }}
+        run: |
+          if [ -z "$WIKI_TOKEN" ]; then
+            echo "WIKI_TOKEN not set, skip wiki sync"
+            exit 0
+          fi
+          git clone "https://x-access-token:${WIKI_TOKEN}@github.com/${{ github.repository }}.wiki.git" wiki
+          cd wiki
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          cp "$GITHUB_WORKSPACE"/docs/*.md . 2>/dev/null || true
+          cp "$GITHUB_WORKSPACE/README.md" Home.md 2>/dev/null || true
+          [ -f Home.md ] || ( [ -f architecture.md ] && cp architecture.md Home.md ) || touch Home.md
+          git add -A
+          if git diff --staged --quiet; then
+            echo "No wiki changes"
+          else
+            git commit -m "Sync docs from main"
+            git push
+          fi
