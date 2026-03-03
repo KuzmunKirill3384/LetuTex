@@ -16,7 +16,7 @@ function contentTypeFromPath(filePath) {
   return mime[ext] || 'application/octet-stream';
 }
 import { createFileStore } from '../infrastructure/fileStore.js';
-import { createFileStoreMongo, materializeProjectToDir } from '../infrastructure/fileStoreMongo.js';
+import { createFileStoreMongo } from '../infrastructure/fileStoreMongo.js';
 import * as projectService from './projectService.js';
 
 function _root(projectId) {

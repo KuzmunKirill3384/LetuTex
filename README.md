@@ -542,7 +542,7 @@ npm run test:coverage   # с покрытием
 ```bash
 npm ci            # установка зависимостей
 npm run build     # сборка фронтенда
-npm test          # запуск всех тестов (86 тестов)
+npm test          # запуск всех тестов (~103 теста)
 npm run lint      # проверка ESLint
 ```
 

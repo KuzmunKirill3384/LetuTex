@@ -16,7 +16,7 @@ export function useRealtime() {
     return '';
   }
 
-  function connect(projectId, filePath, { onDoc, onOp, onCursor } = {}) {
+  function connect(projectId, filePath, { onDoc, onOp, onCursor: _onCursor } = {}) {
     const url = getRealtimeUrl();
     if (!url) return Promise.resolve(null);
     const t = getToken();

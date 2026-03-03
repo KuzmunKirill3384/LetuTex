@@ -15,10 +15,15 @@ data/
 # IDE
 .idea/
 .vscode/
-.cursor/
 *.swp
 *.swo
 *~
+
+# Cursor
+.cursor/
+**/.cursor/
+.cursorignore
+.cursorrules
 
 # OS
 .DS_Store

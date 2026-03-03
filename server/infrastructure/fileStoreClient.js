@@ -30,7 +30,7 @@ export function createFileStoreClient() {
       return Buffer.from(buf);
     },
 
-    async delete(projectId, filePath) {
+    async delete(_projectId, _filePath) {
       // Optional: File Store could support DELETE; for now we leave blob on disk
       // and rely on project delete cleanup or periodic cleanup
     },

@@ -138,29 +138,27 @@ export function useEditor(realtime) {
     currentFile.value = file;
     localStorage.setItem('leti_last_file', file);
     const projectId = currentProjectId.value;
+    try {
+      const data = await api(`/api/projects/${projectId}/files/${encodeURIComponent(file)}`);
+      editorContent.value = data.content ?? '';
+      fileLoaded = true;
+    } catch (e) {
+      showError(e.message);
+    }
     if (realtime?.connect) {
       try {
         await realtime.connect(projectId, file, {
           onDoc(content) {
-            editorContent.value = content ?? '';
-            fileLoaded = true;
+            if (content != null) editorContent.value = content;
           },
           onOp(op, remoteUserId) {
             if (remoteUserId && user.value?.id === remoteUserId) return;
             editorContent.value = applyOpToContent(editorContent.value, op);
           },
         });
-        return;
       } catch {
         realtime.disconnect?.();
       }
-    }
-    try {
-      const data = await api(`/api/projects/${projectId}/files/${encodeURIComponent(file)}`);
-      editorContent.value = data.content || '';
-      fileLoaded = true;
-    } catch (e) {
-      showError(e.message);
     }
   }
 

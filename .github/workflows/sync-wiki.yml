@@ -23,7 +23,10 @@ jobs:
             echo "WIKI_TOKEN not set, skip wiki sync"
             exit 0
           fi
-          git clone "https://x-access-token:${WIKI_TOKEN}@github.com/${{ github.repository }}.wiki.git" wiki
+          if ! git clone "https://x-access-token:${WIKI_TOKEN}@github.com/${{ github.repository }}.wiki.git" wiki 2>&1; then
+            echo "::error::Wiki repo not found. Create it first: open the Wiki tab in the repo, click 'Create the first page', add a page (e.g. Home with any text), Save. Then re-run or push again."
+            exit 1
+          fi
           cd wiki
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"

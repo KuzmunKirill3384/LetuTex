@@ -151,7 +151,7 @@ export async function materializeProjectToDir(projectId, targetDir) {
     if (!isProjectFile(f.name)) continue;
     const full = pathMod.join(targetDir, f.path);
     fs.mkdirSync(pathMod.dirname(full), { recursive: true });
-    const { content, contentType } = await store.getFileWithType(f.path);
+    const { content, contentType: _contentType } = await store.getFileWithType(f.path);
     if (Buffer.isBuffer(content)) {
       fs.writeFileSync(full, content);
     } else {

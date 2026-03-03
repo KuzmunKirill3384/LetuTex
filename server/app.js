@@ -86,9 +86,9 @@ export function createApp() {
     next();
   });
   projectsRouter.use('/', projectRoutes);
+  projectsRouter.use('/', historyRoutes);
   projectsRouter.use('/', fileRoutes);
   projectsRouter.use('/', compileRoutes);
-  projectsRouter.use('/', historyRoutes);
   projectsRouter.use('/', downloadRoutes);
   app.use('/api/projects', projectsRouter);
 
